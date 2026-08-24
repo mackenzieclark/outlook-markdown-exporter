@@ -173,6 +173,10 @@ that aliases stay pinned to the same person everywhere they appear, and that no
 `<table>`, cell tag or inline style ever reaches the output. No test framework;
 `assert` only.
 
+Gateway security banners (external-sender warnings, phishing-alert strips) are
+deliberately kept, even with stripping on. When the destination is an LLM, the
+fact that a message was flagged is context worth preserving.
+
 ## Limitations
 
 - **Thread = quoted history.** Office.js has no conversation API, so "thread"

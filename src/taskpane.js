@@ -248,6 +248,19 @@
   }
 
   // ---------- signatures and boilerplate ----------
+  //
+  // Gateway security banners ("This message came from outside your
+  // organisation", phishing-alert strips, and similar) are DELIBERATELY NOT
+  // stripped, even though they are repetitive and repeat once per quoted layer.
+  // The usual destination for this Markdown is an LLM, and the fact that a
+  // message was flagged as external or suspicious is exactly the kind of
+  // context that should survive the trip. Removing it would quietly strip a
+  // safety signal on the way into a system that acts on the text.
+  //
+  // They cost little now that tables are normalised: what is left is a line or
+  // two of plain prose, not a wall of markup. If a banner ever arrives as
+  // clutter rather than text, fix the markup handling — do not add the wording
+  // to DISCLAIMER.
   var CLIENT_FOOTER = /^(sent from my [\w' ]{1,24}|sent from mail for windows|sent from outlook( for (ios|android))?|get outlook for (ios|android))[.!]?$/i;
   var DISCLAIMER = /(intended recipient|confidentiality notice|privileged and confidential|received this (e-?mail |message |transmission )?in error|this e-?mail and any attachments|notify the sender (immediately )?and delete)/i;
   var BOILER_SEL = "p, div, td, th, table, blockquote, span, font, section";
