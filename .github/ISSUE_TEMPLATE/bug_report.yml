@@ -1,0 +1,103 @@
+name: Conversion or add-in bug
+description: Something converts incorrectly, or the task pane misbehaves
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Remove every identifier before you write anything
+
+        This issue will be public, permanent, and search-indexed. Before
+        pasting any email content, replace **all** of the following:
+
+        names · email addresses · domains · company, customer and project
+        names · subject lines · phone numbers · job titles · URLs (including
+        the real URL encoded inside a Safe Links or Mimecast wrapper) ·
+        `message_id` and `conversation_id` · invoice, ticket and order
+        numbers · monetary amounts
+
+        Use **Alice**, **Bob**, **Carol** at `example.com`, and
+        **Example Corp**.
+
+        **Keep the markup structure** — `MsoNormalTable`, `WordSection1`,
+        `divRplyFwdMsg`, `x_` prefixes, nesting depth, inline styles. That is
+        the part that reproduces the bug.
+
+        The add-in's own alias mode is a convenience, **not** a sanitiser: it
+        does not touch names in prose, company names, subjects, URLs, or IDs.
+        Read your paste before posting it.
+
+        See [CONTRIBUTING.md](../blob/main/CONTRIBUTING.md) for the full
+        guidance.
+
+  - type: checkboxes
+    id: sanitised
+    attributes:
+      label: Confirm before continuing
+      options:
+        - label: I have removed every real name, address, domain, company name, subject line, URL, ID, and reference number from everything in this issue.
+          required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Add-in version
+      description: Bottom-left of the task pane, e.g. v1.2.1.0
+      placeholder: v1.2.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: Outlook client and version
+      description: Bottom-right of the task pane, e.g. newOutlookWindows 20260814008.03
+      placeholder: newOutlookWindows 20260814008.03
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: options
+    attributes:
+      label: Which options were on?
+      options:
+        - label: YAML frontmatter
+        - label: Split quoted replies into sections
+        - label: Strip signatures and boilerplate
+        - label: Strip email addresses to names
+
+  - type: dropdown
+    id: namemode
+    attributes:
+      label: Name mode
+      description: Only relevant if "Strip email addresses to names" was on
+      options:
+        - Not applicable
+        - Display name
+        - First name only
+        - Alias all names
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What happened, and what you expected
+      description: Describe the difference. Sanitised examples only.
+    validations:
+      required: true
+
+  - type: textarea
+    id: source
+    attributes:
+      label: Sanitised source HTML fragment
+      description: >
+        The smallest fragment that still misbehaves. Structure preserved,
+        identifiers replaced. If you can reduce it to a dozen lines, it can
+        become a test fixture directly — which is most of the work of fixing
+        it.
+      render: html
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Sanitised Markdown output
+      render: markdown

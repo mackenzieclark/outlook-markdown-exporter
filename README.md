@@ -215,6 +215,13 @@ fact that a message was flagged is context worth preserving.
   Turn the checkbox off to get everything verbatim.
 - Requires Mailbox requirement set 1.8 (any current Outlook).
 
+## Contributing
+
+Issues and pull requests welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
+**Never paste real email content into an issue.** Strip every name, address,
+domain, subject line, URL and ID first, and keep only the markup structure;
+the contributing guide explains what to replace and what to preserve.
+
 ## Privacy
 
 The add-in reads only the message you have open, converts it in the task pane,
