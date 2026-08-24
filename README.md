@@ -62,9 +62,19 @@ Alice, can you send the status?
   recognised by shape — a layout table holding a handful of short lines, one of
   which is an address — not by the address alone, so prose that quotes an
   address is left alone, and so is a "Thanks, / Bob" sign-off.
-- Splits the quoted history at Outlook's reply boundaries (`divRplyFwdMsg`,
-  `appendonsend`, Gmail quotes, `border-top` header blocks) into `##` sections
-  titled by sender and date. Toggle off to get the body verbatim.
+- Splits the quoted history into `##` sections titled by sender and date, in
+  both of the shapes real mail arrives in. Outlook writes the chain **flat** —
+  `divRplyFwdMsg`, `appendonsend`, a `border-top` header block, or (over half
+  of all boundaries in practice) nothing but a bare `<hr>` in front of the
+  `From:` block. Gmail and Apple Mail **nest**: every quoted message sits
+  inside the one that quotes it, twenty-one levels deep in a real forty-message
+  thread. Nested chains are cut level by level, so each quoted message gets its
+  own section instead of the whole history landing in one, and none of them
+  arrives behind a wall of `>` prefixes. The `On … wrote:` line above a Gmail
+  or Apple quote becomes that section's heading; `From:` blocks are read in
+  English and in Spanish. A bare `<hr>` counts only when a header block follows
+  it, so an ordinary rule inside a message does not split it. Toggle off to get
+  the body verbatim.
 - Optionally strips email addresses back to the person — their **display
   name**, their **first name**, or a stable **alias** (`User1`, `User2`, …)
   when you want to hand a thread to an LLM without handing over anyone's
@@ -165,13 +175,15 @@ rejects versions below `1.0.0`.
 cd test && npm i && node run.js
 ```
 Loads the real `src/taskpane.html` under jsdom with a stubbed `Office` object,
-converts four synthetic fixtures (`test/sample.html` plus three built into the
+converts nine synthetic fixtures (`test/sample.html` plus eight built into the
 harness: a reply chain with awkward names, a nested signature table with
-boilerplate, and a pair of data tables with protector-rewritten links), prints
+boilerplate, a pair of data tables with protector-rewritten links, linkified
+quoted headers, mail with no recipients, a thread cut by bare `<hr>`s with one
+Spanish header block, a four-deep Gmail chain and an Apple Mail one), prints
 the Markdown for each option combination, then asserts the results — including
-that aliases stay pinned to the same person everywhere they appear, and that no
-`<table>`, cell tag or inline style ever reaches the output. No test framework;
-`assert` only.
+that aliases stay pinned to the same person everywhere they appear, that a
+nested quote chain yields one section per message, and that no `<table>`, cell
+tag or inline style ever reaches the output. No test framework; `assert` only.
 
 Gateway security banners (external-sender warnings, phishing-alert strips) are
 deliberately kept, even with stripping on. When the destination is an LLM, the
@@ -184,8 +196,25 @@ fact that a message was flagged is context worth preserving.
   message to get the whole chain. Splitting true sibling messages would need
   Microsoft Graph (`/me/messages?$filter=conversationId eq …`) and an Entra app
   registration with tenant consent — planned as an optional v2.
-- Header detection relies on Outlook's `From: / Sent: / To:` block; other
-  clients' quote formats fall back to `Quoted message N`.
+- **A quoted message with no separator at all is not found.** Some clients
+  drop the reply straight into a plain `<div>`, with no rule, no id, no border
+  and no attribution line above the `From:` block — about a fifth of the
+  boundaries in a sample of real threads looked like that. Detecting those
+  means searching the body text for anything header-shaped rather than looking
+  for a marker, which would also split messages that merely quote a header in
+  prose; that trade has not been made, so those replies stay inside the
+  section above them.
+- Header blocks are read in English (`From: / Sent: / To: / Subject:`) and
+  Spanish (`De: / Enviado: / Para: / Asunto:`) — the word lists at the top of
+  the splitter are the whole of it, so another language is a matter of adding
+  its four words. A quote with a header in some other language, or with no
+  header and no `On … wrote:` line, still becomes a section but is titled
+  `Quoted message N`.
+- An `<hr>` counts as a boundary only when a quoted header block follows it
+  immediately, because decorative rules inside ordinary messages are common
+  and splitting on every one of them would shred a message into fragments. A
+  message that ends with a rule and then quotes a header block as prose would
+  be split there.
 - **Stripping addresses covers addresses, not prose.** It rewrites the
   frontmatter `from`/`to`/`cc`, the `##` section headers, the quoted
   `From:`/`To:`/`Cc:` blocks, bare addresses and `mailto:` links. A name that

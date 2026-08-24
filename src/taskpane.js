@@ -367,43 +367,188 @@
     });
   }
 
-  // Split the body at quoted-reply boundaries. Outlook marks these with
-  // <div id="divRplyFwdMsg">, <div id="appendonsend">, or a "From:" header block
-  // inside a border-top div. Returns array of {headerText, body} where the first
-  // entry has no header.
+  // ---------- quoted-thread boundaries ----------
+  //
+  // Quoted history arrives in two shapes, and they need different handling.
+  //
+  // Outlook writes the chain FLAT: every quoted message is a sibling of the
+  // last, introduced by <div id="divRplyFwdMsg">, by the empty
+  // <div id="appendonsend">, by a "From:" header block inside a border-top
+  // div — or, from Outlook mobile and most gateways, by nothing at all but a
+  // bare <hr>. That last one is over half of the boundaries in real mail.
+  //
+  // Gmail and Apple Mail NEST instead: the whole rest of the thread sits
+  // inside one <blockquote>, the message after that inside that one, and so on
+  // — a real forty-message chain reached twenty-one levels. Gmail writes the
+  // quote as <blockquote class="gmail_quote">, which matches neither
+  // div.gmail_quote nor blockquote[type='cite'], inside a
+  // <div class="gmail_quote"> that also holds the "On … wrote:" attribution.
+  var MARKER_SEL = "div#divRplyFwdMsg, div#appendonsend, div.gmail_quote, " +
+    "blockquote.gmail_quote, blockquote[type='cite'], hr, " +
+    "div[style*='border-top'][style*='solid']";
+
+  // The fields of a quoted header block, by role. This is the whole of the
+  // language support: adding a locale means adding its words here, because
+  // every pattern below is built from these lists. The roles are pooled rather
+  // than kept per language on purpose — a client set to one language quotes
+  // headers written in another all the time, so demanding a consistent set
+  // would lose exactly the mixed blocks a cross-locale thread produces.
+  var HEADER_WORDS = {
+    from: ["From", "De"],
+    when: ["Sent", "Date", "Enviado", "Fecha"],
+    rest: ["To", "Cc", "Subject", "Para", "Asunto"],
+  };
+
+  // Deliberately no \b in front of a label. Outlook separates the four fields
+  // with nothing but <br>, so textContent reads "…9:00 AMTo: Bob" — there is
+  // no word boundary there to require, and the labels are all the pattern
+  // below has to anchor on.
+  function alt(words) { return "(?:" + words.join("|") + ")"; }
+
+  var HEADER_RE = new RegExp(
+    alt(HEADER_WORDS.from) + "\\s*:\\s*(.+?)\\s*" +
+    alt(HEADER_WORDS.when) + "\\s*:\\s*(.+?)\\s*" +
+    alt(HEADER_WORDS.rest) + "\\s*:", "i");
+
+  // The same block, anchored: what has to follow an <hr> before it counts as a
+  // boundary. The leading class allows for the row of underscores or dashes
+  // some clients draw in front of the header.
+  var HEADER_AT = new RegExp(
+    "^[\\s\\-_*]{0,40}" + alt(HEADER_WORDS.from) + "\\s*:[\\s\\S]{1,200}?" +
+    alt(HEADER_WORDS.when.concat(HEADER_WORDS.rest)) + "\\s*:", "i");
+
+  // "On <date>, <person> wrote:" — Gmail and Apple Mail put this immediately
+  // above the quote, and for those clients it is the only header there is. A
+  // digit is required so that prose which happens to end in "wrote:" does not
+  // qualify.
+  var ON_WROTE_SRC = "(?:^|[\\s>])On\\s+([\\s\\S]{3,300}?\\d[\\s\\S]{0,300}?)\\s+wrote\\s*:";
+  var ON_WROTE_RE = new RegExp(ON_WROTE_SRC);
+  var ATTRIB_ONLY = new RegExp("^(?:" + ON_WROTE_SRC + ")?$");
+  // Where the date ends and the person begins. Gmail puts no comma there
+  // ("… at 7:06 AM Bob <bob@example.com> wrote:") and Apple Mail does
+  // ("…, at 07:06, Bob <bob@example.com> wrote:"), so the clock is the one
+  // landmark both agree on; a trailing comma is the fallback.
+  var CLOCK_RE = /\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AaPp]\.?[Mm]\.?)?/;
+
+  function between(a, b) {
+    var r = document.createRange();
+    r.setStartBefore(a);
+    r.setEndBefore(b);
+    return flat(r.toString());
+  }
+
+  // People put horizontal rules inside ordinary messages — above a sign-off,
+  // between sections of a long note — so an <hr> on its own means nothing. It
+  // is a boundary only when a quoted header block follows it immediately.
+  // Treating every <hr> as one would shred normal messages into bogus sections.
+  function startsHeader(hr, body) {
+    var r = document.createRange();
+    r.setStartAfter(hr);
+    r.setEndAfter(body.lastChild);
+    return HEADER_AT.test(flat(r.toString()).slice(0, 300));
+  }
+
+  // Apple Mail and Gmail put the attribution line in the block BEFORE the
+  // quote. Cutting at the blockquote would strand "On … wrote:" at the foot of
+  // the previous section and throw away the only header this quote has, so the
+  // section starts at the attribution instead.
+  function quoteStart(m) {
+    var prev = m.nodeName === "BLOCKQUOTE" ? m.previousElementSibling : null;
+    if (!prev || prev.matches(MARKER_SEL)) return m;
+    return ATTRIB_ONLY.test(flat(prev.textContent)) ? prev : m;
+  }
+
+  function isQuoteWrap(n) {
+    if (/(^|\s)gmail_quote(\s|$)/.test(n.getAttribute("class") || "")) return true;
+    return n.nodeName === "BLOCKQUOTE" && /^cite$/i.test(n.getAttribute("type") || "");
+  }
+
+  // Every quote wrapper still standing inside a section is a clone of the frame
+  // that section was cut out of — its own blockquote, or one of the ones it was
+  // nested in. Anything that was a boundary in its own right has already been
+  // cut away, so what is left carries no message of its own. Left in place,
+  // twenty-one levels of nesting would put twenty-one "> " prefixes in front of
+  // every line of the oldest message, when the section heading already says
+  // whose message it is.
+  function unwrapQuotes(seg) {
+    list(seg.querySelectorAll("blockquote, div")).forEach(function (n) {
+      if (seg.contains(n) && isQuoteWrap(n)) unwrapNode(n);
+    });
+  }
+
+  function attribHeader(s) {
+    var t = flat(s);
+    var m = CLOCK_RE.exec(t);
+    var cut = m ? m.index + m[0].length : t.lastIndexOf(",");
+    var who, when;
+    if (cut <= 0) return t;
+    when = cleanName(t.slice(0, cut));
+    who = cleanName(t.slice(cut).replace(/^[,\s]+/, ""));
+    return who && when ? who + " — " + when : t;
+  }
+
+  // Whichever of the two header forms comes first in the section is the one
+  // that introduces it; a match further down belongs to a deeper quote.
+  function headerFor(txt, i) {
+    var best = null;
+    var m = HEADER_RE.exec(txt);
+    if (m) best = { at: m.index, text: flat(m[1]) + " — " + flat(m[2]) };
+    m = ON_WROTE_RE.exec(txt);
+    if (m && (!best || m.index < best.at)) best = { at: m.index, text: attribHeader(m[1]) };
+    return best ? best.text : "Quoted message " + (i + 1);
+  }
+
+  // Split the body at quoted-reply boundaries. Returns array of {header, node},
+  // where the first entry has no header.
   function splitThread(body) {
     var sections = [];
-    var markers = Array.prototype.slice.call(body.querySelectorAll(
-      "div#divRplyFwdMsg, div#appendonsend, div.gmail_quote, blockquote[type='cite'], " +
-      "div[style*='border-top'][style*='solid']"
-    ));
-    // Keep only top-level-ish markers (not nested inside an earlier marker)
-    markers = markers.filter(function (m, i) {
-      return !markers.slice(0, i).some(function (prev) { return prev.contains(m); });
+    var starts = [];
+    var markers = list(body.querySelectorAll(MARKER_SEL)).filter(function (m) {
+      return m.nodeName !== "HR" || startsHeader(m, body);
     });
-    if (!markers.length) return [{ header: "", node: body }];
+    var head, range;
 
-    var cursor = body;
-    var head = document.createElement("div");
-    // Move everything before the first marker into head
-    var first = markers[0];
-    var range = document.createRange();
+    markers.forEach(function (m) {
+      var prev = starts.length ? starts[starts.length - 1] : null;
+      var start = quoteStart(m);
+      // A wrapper and the quote inside it are ONE boundary: Gmail's
+      // <div class="gmail_quote"> holds the attribution and then the
+      // <blockquote class="gmail_quote"> that carries the message, with
+      // nothing between the two. Anything else nested inside an earlier marker
+      // is a DEEPER quote and has to get its own section — discarding those,
+      // which is what keeping only top-level markers did, collapsed an entire
+      // Gmail chain into one section however many messages long it was.
+      if (prev && prev.marker.contains(m) && ATTRIB_ONLY.test(between(prev.start, start))) return;
+      starts.push({ marker: m, start: start });
+    });
+    if (!starts.length) return [{ header: "", node: body }];
+
+    head = document.createElement("div");
+    range = document.createRange();
+    // Move everything before the first boundary into head.
     range.setStartBefore(body.firstChild);
-    range.setEndBefore(first);
+    range.setEndBefore(starts[0].start);
     head.appendChild(range.extractContents());
     sections.push({ header: "", node: head });
 
-    markers.forEach(function (m, i) {
+    starts.forEach(function (s, i) {
       var seg = document.createElement("div");
       var r = document.createRange();
-      r.setStartBefore(m);
-      if (markers[i + 1]) r.setEndBefore(markers[i + 1]); else r.setEndAfter(body.lastChild);
+      var txt;
+      // An <hr> introduces its section, it is not part of it: starting after
+      // the rule leaves it in no section at all, where a leading one would
+      // otherwise render as a thematic break directly under the section's own
+      // heading. It cannot be trimmed off the fragment afterwards — a boundary
+      // partway into a wrapper comes out inside a clone of that wrapper.
+      if (s.start.nodeName === "HR") r.setStartAfter(s.start); else r.setStartBefore(s.start);
+      // A nested boundary only partly contains the levels above it, and
+      // extracting such a range clones them around the piece it takes — which
+      // is exactly what separates one level of a Gmail chain from the next.
+      if (starts[i + 1]) r.setEndBefore(starts[i + 1].start); else r.setEndAfter(body.lastChild);
       seg.appendChild(r.extractContents());
-      // Try to pull "From: ... Sent: ... To: ... Subject: ..." header line
-      var txt = seg.textContent.replace(/ /g, " ");
-      var hm = txt.match(/From:\s*(.+?)\s*(?:Sent|Date):\s*(.+?)\s*(?:To|Cc|Subject):/i);
-      var header = hm ? (hm[1].trim() + " — " + hm[2].trim()) : "Quoted message " + (i + 1);
-      sections.push({ header: header, node: seg });
+      txt = seg.textContent.replace(/ /g, " ");
+      unwrapQuotes(seg);
+      sections.push({ header: headerFor(txt, i), node: seg });
     });
     return sections;
   }

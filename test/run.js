@@ -708,4 +708,238 @@ check("every frontmatter line parses as a mapping entry", () => {
   });
 });
 
+
+// G: the boundary that carries no marker of its own — a bare <hr> and then the
+// quoted header block, no id, no class, no border-top anywhere. Outlook mobile
+// and most gateways write the chain this way, and it is the single most common
+// shape in real threaded mail. Also carries a decorative <hr> inside the newest
+// message, which must NOT split, and a Spanish header block for the locale
+// table.
+const G = {
+  html: [
+    '<html><body><div class="WordSection1">',
+    '<p class="MsoNormal">Latest reply, and then the checklist:</p>',
+    "<hr>",
+    '<p class="MsoNormal">Step one, then step two.</p>',
+    "<hr>",
+    "<div><b>From:</b> Bob &lt;bob@example.com&gt;<br><b>Sent:</b> Tuesday, August 19, 2026 3:02 PM",
+    "<br><b>To:</b> Alice &lt;alice@example.com&gt;<br><b>Subject:</b> Q3 Deliverables</div>",
+    '<p class="MsoNormal">Second message body.</p>',
+    "<hr>",
+    "<div><b>De:</b> Carol &lt;carol@example.com&gt;<br><b>Enviado:</b> lunes, 17 de agosto de 2026 8:00",
+    "<br><b>Para:</b> Bob &lt;bob@example.com&gt;<br><b>Asunto:</b> Presupuesto</div>",
+    '<p class="MsoNormal">Tercer mensaje.</p>',
+    "</div></body></html>",
+  ].join("\n"),
+  item: {
+    subject: "RE: Q3 Deliverables",
+    from: { displayName: "Alice", emailAddress: "alice@example.com" },
+    to: [{ displayName: "Bob", emailAddress: "bob@example.com" }],
+    cc: [],
+    dateTimeCreated: new Date("2026-08-20T15:30:00Z"),
+    internetMessageId: "<hr@example.com>",
+    conversationId: "AAQo",
+    attachments: [],
+  },
+};
+
+// H: a Gmail chain. Every quoted message sits INSIDE the one that quotes it, so
+// four messages means four levels of <blockquote class="gmail_quote"> — a real
+// export reached twenty-one. Each level is a <div class="gmail_quote"> holding
+// the "On … wrote:" attribution and then the blockquote itself; the two are one
+// boundary, but the level below is a separate message and must get its own
+// section.
+const H = {
+  html: [
+    '<html><body><div dir="ltr">Newest note, from Alice.</div>',
+    '<div class="gmail_quote gmail_quote_container">',
+    '<div dir="ltr" class="gmail_attr">On Thu, Aug 20, 2026 at 9:15 AM Bob &lt;bob@example.com&gt; wrote:<br></div>',
+    '<blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">',
+    '<div dir="ltr">Bob answers the second question.</div>',
+    '<div class="gmail_quote gmail_quote_container">',
+    '<div dir="ltr" class="gmail_attr">On Wed, Aug 19, 2026 at 4:40 PM Carol &lt;carol@example.com&gt; wrote:<br></div>',
+    '<blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">',
+    '<div dir="ltr">Carol asks the second question.</div>',
+    // This level has NO container div — just the attribution and then the
+    // blockquote, which is what is left after another client re-emits a Gmail
+    // quote. div.gmail_quote does not match it and neither does type='cite'.
+    '<div dir="ltr">On Tue, Aug 18, 2026 at 11:05 AM Alice &lt;alice@example.com&gt; wrote:</div>',
+    '<blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">',
+    '<div dir="ltr">Alice answers the first question.</div>',
+    '<div class="gmail_quote gmail_quote_container">',
+    '<div dir="ltr" class="gmail_attr">On Mon, Aug 17, 2026 at 8:00 AM Bob &lt;bob@example.com&gt; wrote:<br></div>',
+    '<blockquote class="gmail_quote" style="margin:0 0 0 .8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex">',
+    '<div dir="ltr">Bob asks the first question.</div>',
+    "</blockquote></div>",
+    "</blockquote>",
+    "</blockquote></div>",
+    "</blockquote></div>",
+    "</body></html>",
+  ].join("\n"),
+  item: {
+    subject: "Re: Two questions",
+    from: { displayName: "Alice", emailAddress: "alice@example.com" },
+    to: [{ displayName: "Bob", emailAddress: "bob@example.com" }],
+    cc: [{ displayName: "Carol", emailAddress: "carol@example.com" }],
+    dateTimeCreated: new Date("2026-08-21T07:00:00Z"),
+    internetMessageId: "<gm@example.com>",
+    conversationId: "AAQp",
+    attachments: [],
+  },
+};
+
+// I: Apple Mail. Same nesting as Gmail, but the quote is a bare
+// <blockquote type="cite"> and the attribution is a SIBLING in front of it
+// rather than a wrapper around it — so the cut has to be made before the
+// attribution, or the only header the quote has ends up at the foot of the
+// previous section.
+const I = {
+  html: [
+    "<html><body><div>Thanks, that works for me.</div>",
+    "<div><br></div>",
+    "<div>On Aug 20, 2026, at 9:15 AM, Bob &lt;bob@example.com&gt; wrote:</div>",
+    '<blockquote type="cite">',
+    "<div>Bob confirms the date.</div>",
+    "<div>On Aug 19, 2026, at 4:40 PM, Carol &lt;carol@example.com&gt; wrote:</div>",
+    '<blockquote type="cite"><div>Carol proposes the date.</div></blockquote>',
+    "</blockquote>",
+    "</body></html>",
+  ].join("\n"),
+  item: {
+    subject: "Re: Kickoff date",
+    from: { displayName: "Alice", emailAddress: "alice@example.com" },
+    to: [{ displayName: "Bob", emailAddress: "bob@example.com" }],
+    cc: [],
+    dateTimeCreated: new Date("2026-08-21T09:00:00Z"),
+    internetMessageId: "<ap@example.com>",
+    conversationId: "AAQq",
+    attachments: [],
+  },
+};
+
+const gOut = run({ fixture: G });
+const hOut = run({ fixture: H });
+const iOut = run({ fixture: I });
+
+show("G: bare <hr> boundaries, one of them Spanish", gOut);
+show("H: a four-deep Gmail chain", hOut);
+show("I: Apple Mail, attribution outside the blockquote", iOut);
+
+// Section headings, in order, for a converted message.
+const headings = (md) => (md.match(/^## .*$/gm) || []).map((s) => s.slice(3));
+// Everything above the first section heading: the message the user has open.
+const newest = (md) => md.split(/^## /m)[0];
+
+console.log("\nbare <hr> boundaries");
+check("an <hr> followed by a header block is a boundary", () => {
+  assert.deepStrictEqual(headings(gOut), [
+    "Bob <bob@example.com> — Tuesday, August 19, 2026 3:02 PM",
+    "Carol <carol@example.com> — lunes, 17 de agosto de 2026 8:00",
+  ]);
+  assert.ok(gOut.includes("Second message body."));
+  assert.ok(gOut.includes("Tercer mensaje."));
+});
+check("an <hr> with no header block after it does NOT split", () => {
+  // A horizontal rule is ordinary punctuation inside a message; splitting on
+  // every one of them would shred a normal message into bogus sections.
+  const top = newest(gOut);
+  assert.ok(top.includes("Latest reply, and then the checklist:"));
+  assert.ok(top.includes("Step one, then step two."), "the rule kept its own message whole");
+  assert.ok(/^---$/m.test(top), "and the rule itself survives as a thematic break");
+});
+check("the introducing rule is not left under the heading it introduces", () => {
+  // Every section, not just the first: a boundary partway into a wrapper is
+  // extracted inside a clone of that wrapper, so the rule is not necessarily
+  // the fragment's first child and cannot simply be trimmed off afterwards.
+  gOut.split(/^## .*$/m).slice(1).forEach((part) => {
+    assert.ok(!/^\s*---/.test(part), "section opens with a stray rule: " + part.slice(0, 60));
+  });
+});
+check("a Spanish header block reads like an English one", () => {
+  // De/Enviado/Para/Asunto. The word lists are the extension point for any
+  // further locale; nothing else in the splitter is language-specific.
+  assert.ok(gOut.includes("## Carol <carol@example.com> — lunes, 17 de agosto de 2026 8:00"));
+});
+check("the <hr> path strips addresses like every other boundary", () => {
+  const md = run({ fixture: G, strip: true, mode: "alias" });
+  assert.ok(!/@example\.com/.test(withoutIds(md)));
+  assert.ok(/^## User\d+ — lunes, 17 de agosto de 2026 8:00$/m.test(md));
+});
+
+console.log("\nGmail and Apple Mail quotes");
+check("a Gmail chain gives one section per quoted message, not one for the lot", () => {
+  // The whole rest of the thread sits inside the FIRST blockquote, so a filter
+  // that keeps only outermost markers returns exactly one section here however
+  // long the chain is.
+  assert.deepStrictEqual(headings(hOut), [
+    "Bob <bob@example.com> — Thu, Aug 20, 2026 at 9:15 AM",
+    "Carol <carol@example.com> — Wed, Aug 19, 2026 at 4:40 PM",
+    "Alice <alice@example.com> — Tue, Aug 18, 2026 at 11:05 AM",
+    "Bob <bob@example.com> — Mon, Aug 17, 2026 at 8:00 AM",
+  ]);
+});
+check("each Gmail section holds its own message and no other", () => {
+  const parts = hOut.split(/^## .*$/m);
+  assert.ok(parts[0].includes("Newest note, from Alice."));
+  assert.ok(parts[1].includes("Bob answers the second question."));
+  assert.ok(!parts[1].includes("Carol asks the second question."));
+  assert.ok(parts[2].includes("Carol asks the second question."));
+  assert.ok(parts[3].includes("Alice answers the first question."));
+  assert.ok(parts[4].includes("Bob asks the first question."));
+});
+check("the oldest message is not buried under four levels of '>'", () => {
+  // Cutting a nested chain leaves each section wrapped in clones of every
+  // blockquote it sat inside; twenty-one of those turn the oldest message into
+  // twenty-one '>' prefixes on every line, and say nothing the heading has not.
+  assert.ok(!/^\s*>/m.test(hOut), "no quote prefixes: " + (hOut.match(/^\s*>.*/m) || [])[0]);
+});
+check("the container div and the blockquote in it are ONE boundary", () => {
+  // Gmail's <div class="gmail_quote"> holds the attribution and then the
+  // <blockquote class="gmail_quote">. Counting both would put an empty section
+  // titled after the attribution in front of every real one.
+  assert.strictEqual(headings(hOut).length, 4, "four quoted messages, four sections");
+  assert.ok(!/^## Quoted message/m.test(hOut), "no section fell back to a number");
+});
+check("an Apple Mail blockquote[type=cite] still splits, and nests", () => {
+  assert.deepStrictEqual(headings(iOut), [
+    "Bob <bob@example.com> — Aug 20, 2026, at 9:15 AM",
+    "Carol <carol@example.com> — Aug 19, 2026, at 4:40 PM",
+  ]);
+  assert.ok(!/^\s*>/m.test(iOut));
+});
+check("the attribution line goes with the quote it introduces", () => {
+  // It sits outside the blockquote, so cutting at the blockquote would leave
+  // "On … wrote:" dangling at the end of the message above it.
+  assert.ok(!/wrote:/.test(newest(iOut)), "not stranded: " + newest(iOut));
+  assert.ok(newest(iOut).includes("Thanks, that works for me."));
+});
+check("Gmail and Apple sections strip addresses like the Outlook ones", () => {
+  [H, I].forEach((f) => {
+    const md = run({ fixture: f, strip: true, mode: "alias" });
+    assert.ok(!/@example\.com/.test(withoutIds(md)), "no address survives");
+    assert.ok(/^## User\d+ — /m.test(md), "the heading is aliased too");
+  });
+});
+
+console.log("\nthe new boundaries behave like the old ones");
+check("splitting off puts every fixture back in one piece", () => {
+  [G, H, I].forEach((f) => {
+    const md = run({ fixture: f, splitThread: false });
+    assert.ok(!/^## /m.test(md));
+  });
+});
+check("no new fixture leaks raw HTML, either way up", () => {
+  [G, H, I].forEach((f, i) => {
+    const name = "GHI"[i];
+    noRawHtml(run({ fixture: f }), name + " (strip on)");
+    noRawHtml(run({ fixture: f, boiler: false }), name + " (strip off)");
+    noRawHtml(run({ fixture: f, boiler: false, strip: true, mode: "alias" }), name + " (aliased)");
+  });
+});
+check("repeat conversions stay byte-identical", () => {
+  assert.strictEqual(run({ fixture: G }), gOut);
+  assert.strictEqual(run({ fixture: H }), hOut);
+  assert.strictEqual(run({ fixture: I }), iOut);
+});
+
 console.log("\n" + checks + " checks passed.");
