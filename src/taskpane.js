@@ -32,7 +32,9 @@
   function addrs(list) { return (list || []).map(addr).filter(Boolean); }
   function yamlStr(s) { return JSON.stringify(String(s == null ? "" : s)); }
   function yamlList(arr) {
-    if (!arr.length) return "[]";
+    // Leading space matters: "to:[]" has no space after the colon and is not a
+    // valid mapping entry, which makes the entire frontmatter block unparseable.
+    if (!arr.length) return " []";
     return "\n" + arr.map(function (a) { return "  - " + yamlStr(a); }).join("\n");
   }
 
@@ -624,8 +626,21 @@
     return out.join("\n");
   }
 
+  // Outlook linkifies addresses inside quoted headers, so "Name <addr>" arrives
+  // as "Name <[addr](mailto:addr)>". The person scanner then matches only the
+  // link span, stranding the display name outside the match — which leaked real
+  // names into alias mode. Collapse the bracketed form back to a bare address
+  // first. Deliberately narrow: only inside angle brackets, so an ordinary
+  // "[Bob](mailto:bob@example.com)" in prose still reaches the scanner intact.
+  var BRACKETED_MAILTO = /<\s*\[[^\]\r\n]*\]\(\s*mailto:([^)\s]+?)\s*\)\s*\\?>/g;
+
+  function unlinkBracketed(md) {
+    return md.replace(BRACKETED_MAILTO, function (m, addr) { return "<" + addr + ">"; });
+  }
+
   function stripAddresses(md, mode) {
     var p = newPeople();
+    md = unlinkBracketed(md);
     // Pass one only records who is who; its output is thrown away so that no
     // alias number is assigned before every name-to-address link is known.
     walkPeople(md, function (name, email) { learnPerson(p, name, email); return ""; });

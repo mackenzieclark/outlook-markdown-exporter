@@ -619,4 +619,93 @@ check("a corrupt blob is ignored rather than throwing", () => {
   assert.strictEqual(boxes().nameMode, "display", "an unknown mode is not applied");
 });
 
+
+// E: the same person in two quoted headers — once as a plain address, once
+// linkified by Outlook into [addr](mailto:addr). Both must strip identically;
+// the linkified form used to leave the display name stranded outside the match,
+// leaking real names into alias mode.
+const E = {
+  html: [
+    '<html><body><div class="WordSection1">',
+    '<p class="MsoNormal">Body text.</p>',
+    '<div id="divRplyFwdMsg" dir="ltr">',
+    '<b>From:</b> Alice Smith &lt;alice@example.com&gt;<br>',
+    '<b>Sent:</b> Monday, August 17, 2026 8:00 AM<br>',
+    '<b>To:</b> Bob Jones &lt;bob@example.com&gt;<br>',
+    '<b>Subject:</b> Budget</div>',
+    '<p class="MsoNormal">First reply.</p>',
+    '<div style="border:none;border-top:solid #E1E1E1 1.0pt;padding:3.0pt 0in 0in 0in"><p class="MsoNormal">',
+    '<b>From:</b> Alice Smith &lt;<a href="mailto:alice@example.com">alice@example.com</a>&gt;<br>',
+    '<b>Sent:</b> Friday, August 14, 2026 4:10 PM<br>',
+    '<b>To:</b> Bob Jones &lt;<a href="mailto:bob@example.com">bob@example.com</a>&gt;<br>',
+    '<b>Subject:</b> Budget</p></div>',
+    '<p class="MsoNormal">Original.</p>',
+    "</div></body></html>",
+  ].join("\n"),
+  item: {
+    subject: "Budget",
+    from: { displayName: "Alice Smith", emailAddress: "alice@example.com" },
+    to: [{ displayName: "Bob Jones", emailAddress: "bob@example.com" }],
+    cc: [],
+    dateTimeCreated: new Date("2026-08-20T15:30:00Z"),
+    internetMessageId: "<abc@example.com>",
+    conversationId: "AAQk",
+    attachments: [],
+  },
+};
+
+// F: automated mail with no To: recipients at all — the empty-sequence case.
+const F = {
+  html: '<html><body><p class="MsoNormal">Automated notice.</p></body></html>',
+  item: {
+    subject: "Notice",
+    from: { displayName: "Alice", emailAddress: "noreply@example.com" },
+    to: [],
+    cc: [],
+    dateTimeCreated: new Date("2026-08-20T15:30:00Z"),
+    internetMessageId: "<n@example.com>",
+    conversationId: "AAQk",
+    attachments: [],
+  },
+};
+
+console.log("\nlinkified addresses in quoted headers");
+check("a linkified header strips the same as a plain one", () => {
+  const out = run({ fixture: E, strip: true, mode: "alias", boiler: false });
+  assert.ok(!/Alice Smith|Bob Jones/.test(withoutIds(out)), "no display name survives");
+  assert.ok(!/@example\.com/.test(withoutIds(out)), "no address survives");
+});
+check("one person is one alias across both header forms", () => {
+  const out = withoutIds(run({ fixture: E, strip: true, mode: "alias", boiler: false }));
+  assert.strictEqual(new Set(out.match(/User\d+/g)).size, 2, "exactly two people");
+  // Every **From:** in this fixture is the same person, so they must agree.
+  const froms = out.match(/\*\*From:\*\* (\S+)/g);
+  assert.strictEqual(new Set(froms).size, 1, "same sender, same alias: " + froms);
+});
+check("display mode keeps the name and drops only the address", () => {
+  const out = run({ fixture: E, strip: true, mode: "display", boiler: false });
+  assert.ok(out.includes("Alice Smith"), "name kept");
+  assert.ok(!/@example\.com/.test(withoutIds(out)), "address gone");
+  assert.ok(!/\]\(mailto:/.test(out), "no mailto link left behind");
+});
+check("a mailto link in prose is still left as a link", () => {
+  const out = run({ fixture: B, boiler: false });
+  assert.ok(/\[Bob Smith\]\(mailto:bob@example\.com\)/.test(out), "prose link intact");
+});
+
+console.log("\nfrontmatter is valid YAML");
+check("an empty recipient list keeps a space after the colon", () => {
+  const out = run({ fixture: F });
+  assert.ok(/^to: \[\]$/m.test(out), "got: " + (out.match(/^to:.*$/m) || [])[0]);
+  assert.ok(!/^to:\[\]$/m.test(out), "to:[] is not a mapping entry and breaks the block");
+});
+check("every frontmatter line parses as a mapping entry", () => {
+  const out = run({ fixture: F });
+  const fm = out.split("---")[1].trim().split("\n");
+  fm.forEach((line) => {
+    if (/^\s*-\s/.test(line)) return; // sequence item
+    assert.ok(/^[A-Za-z_][A-Za-z0-9_]*: \S/.test(line), "not a mapping entry: " + line);
+  });
+});
+
 console.log("\n" + checks + " checks passed.");
