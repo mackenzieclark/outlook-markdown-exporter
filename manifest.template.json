@@ -1,0 +1,98 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "id": "57416ff4-2fb1-4851-a9c1-1014b2572f55",
+  "version": "__VERSION__",
+  "name": {
+    "short": "Copy as Markdown",
+    "full": "Copy as Markdown for Outlook"
+  },
+  "description": {
+    "short": "Copy the open email and its quoted thread to the clipboard as Markdown.",
+    "full": "Converts the open email, including its quoted reply chain, to clean Markdown with YAML frontmatter and puts it on the clipboard, ready to paste into an LLM agent, Obsidian, a ticket, or anywhere else. Strips Outlook and Word HTML noise, unwraps Safe Links, converts tables and lists, and splits the quoted history into sections titled by sender and date. Conversion runs entirely in the task pane; message content is never sent anywhere."
+  },
+  "developer": {
+    "name": "mlc",
+    "websiteUrl": "__REPO_URL__",
+    "privacyUrl": "__REPO_URL__/blob/main/PRIVACY.md",
+    "termsOfUseUrl": "__REPO_URL__/blob/main/LICENSE"
+  },
+  "icons": {
+    "outline": "outline.png",
+    "color": "color.png"
+  },
+  "accentColor": "#24292E",
+  "localizationInfo": {
+    "defaultLanguageTag": "en-us"
+  },
+  "authorization": {
+    "permissions": {
+      "resourceSpecific": [
+        {
+          "name": "MailboxItem.Read.User",
+          "type": "Delegated"
+        }
+      ]
+    }
+  },
+  "extensions": [
+    {
+      "requirements": {
+        "scopes": [ "mail" ],
+        "capabilities": [
+          { "name": "Mailbox", "minVersion": "1.8" }
+        ]
+      },
+      "runtimes": [
+        {
+          "id": "taskpaneRuntime",
+          "type": "general",
+          "code": {
+            "page": "__BASE_URL__/src/taskpane.html"
+          },
+          "lifetime": "short",
+          "actions": [
+            {
+              "id": "showTaskpane",
+              "type": "openPage",
+              "displayName": "showTaskpane"
+            }
+          ]
+        }
+      ],
+      "ribbons": [
+        {
+          "contexts": [ "mailRead" ],
+          "tabs": [
+            {
+              "builtInTabId": "TabDefault",
+              "groups": [
+                {
+                  "id": "mdGroup",
+                  "label": "Markdown",
+                  "controls": [
+                    {
+                      "id": "mdButton",
+                      "type": "button",
+                      "label": "Copy as Markdown",
+                      "icons": [
+                        { "size": 16, "url": "__BASE_URL__/assets/icon-16.png" },
+                        { "size": 32, "url": "__BASE_URL__/assets/icon-32.png" },
+                        { "size": 80, "url": "__BASE_URL__/assets/icon-80.png" }
+                      ],
+                      "supertip": {
+                        "title": "Copy as Markdown",
+                        "description": "Convert this email and its quoted thread to Markdown and copy it to the clipboard."
+                      },
+                      "actionId": "showTaskpane"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

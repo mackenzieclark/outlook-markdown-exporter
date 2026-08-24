@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Copy as Markdown</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script src="vendor/turndown.js"></script>
+  <script src="vendor/turndown-plugin-gfm.js"></script>
+  <style>
+    /* Light palette is the base; dark overrides follow. Outlook's theme may
+       differ from the OS theme, so taskpane.js can force either by setting
+       data-theme on <html> from Office.context.officeTheme. */
+    :root {
+      color-scheme: light;
+      --bg: #ffffff;
+      --fg: #201f1e;
+      --border: #c8c6c4;
+      --muted: #605e5c;
+      --field-bg: #ffffff;
+      --btn-bg: #f3f2f1;
+      --accent: #0f6cbd;
+      --ok: #0e700e;
+      --err: #b42318;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #1f1f1f;
+        --fg: #f3f2f1;
+        --border: #484644;
+        --muted: #a19f9d;
+        --field-bg: #292827;
+        --btn-bg: #3b3a39;
+        --accent: #479ef5;
+        --ok: #6ccb6c;
+        --err: #ff9a92;
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1f1f1f;
+      --fg: #f3f2f1;
+      --border: #484644;
+      --muted: #a19f9d;
+      --field-bg: #292827;
+      --btn-bg: #3b3a39;
+      --accent: #479ef5;
+      --ok: #6ccb6c;
+      --err: #ff9a92;
+    }
+
+    body {
+      font: 13px/1.4 system-ui, Segoe UI, sans-serif;
+      margin: 0; padding: 12px;
+      color: var(--fg);
+      background: var(--bg);
+    }
+    button {
+      font: inherit; padding: 6px 12px; margin-right: 6px; cursor: pointer;
+      color: var(--fg); background: var(--btn-bg);
+      border: 1px solid var(--border); border-radius: 4px;
+    }
+    button:hover { border-color: var(--accent); }
+    label { display: block; margin: 6px 0; color: var(--fg); }
+    input[type="checkbox"] { accent-color: var(--accent); }
+    #status { margin: 8px 0; min-height: 1.2em; color: var(--fg); }
+    #status.ok { color: var(--ok); }
+    #status.err { color: var(--err); }
+    footer {
+      margin-top: 8px; font-size: 11px; color: var(--muted);
+      display: flex; justify-content: space-between; gap: 8px;
+    }
+    footer a { color: inherit; }
+    textarea {
+      width: 100%; box-sizing: border-box; height: 60vh;
+      font: 12px/1.35 ui-monospace, Consolas, monospace; white-space: pre;
+      color: var(--fg); background: var(--field-bg);
+      border: 1px solid var(--border); border-radius: 4px; padding: 6px;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <button id="copy">Copy Markdown</button>
+    <button id="download">Save .md</button>
+  </div>
+  <label><input type="checkbox" id="frontmatter" checked> YAML frontmatter</label>
+  <label><input type="checkbox" id="splitThread" checked> Split quoted replies into sections</label>
+  <div id="status"></div>
+  <textarea id="out" spellcheck="false"></textarea>
+  <footer>
+    <span id="version"></span>
+    <span id="host"></span>
+  </footer>
+  <!-- The ?v= must match VERSION in taskpane.js. Outlook caches add-in
+       subresources in its own file cache, which ignores Cache-Control, so a
+       changed URL is the only reliable way to ship a JS update. -->
+  <script src="taskpane.js?v=0.1.1"></script>
+</body>
+</html>
