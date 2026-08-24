@@ -19,16 +19,21 @@ out="${3:-$here}"
 version="$(sed -n 's:.*<Version>\([^<]*\)</Version>.*:\1:p' "$here/manifest.template.xml" | head -1)"
 [ -n "$version" ] || { echo "no <Version> found in manifest.template.xml" >&2; exit 1; }
 
+# The two manifest formats disagree on arity: the add-in only manifest wants
+# a.b.c.d, while the unified manifest schema requires exactly n.n.n. Derive the
+# short form rather than making anyone keep two numbers in step by hand.
+version_json="$(echo "$version" | cut -d. -f1-3)"
+
 stamp() {
-  sed -e "s|__BASE_URL__|$base|g" -e "s|__REPO_URL__|$repo|g" -e "s|__VERSION__|$version|g" "$1"
+  sed -e "s|__BASE_URL__|$base|g" -e "s|__REPO_URL__|$repo|g" -e "s|__VERSION__|$2|g" "$1"
 }
 
 mkdir -p "$out"
 # Must be absolute: the packaging step below runs from a staging directory, so a
 # relative out-dir would resolve against that instead of the caller's cwd.
 out="$(cd "$out" && pwd)"
-stamp "$here/manifest.template.xml"  > "$out/manifest.xml"
-stamp "$here/manifest.template.json" > "$out/manifest.json"
+stamp "$here/manifest.template.xml"  "$version"      > "$out/manifest.xml"
+stamp "$here/manifest.template.json" "$version_json" > "$out/manifest.json"
 
 # The task pane's cache-busting query string has to match the version: Outlook
 # caches add-in subresources in a store that ignores Cache-Control, so a changed
