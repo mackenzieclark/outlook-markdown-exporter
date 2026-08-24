@@ -1,0 +1,8 @@
+# Normalise text in the repo, but keep shell scripts LF even on Windows
+# checkouts: CRLF makes bash fail with "\r: command not found".
+* text=auto
+*.sh text eol=lf
+
+# Binaries git must not touch.
+*.png binary
+*.zip binary
