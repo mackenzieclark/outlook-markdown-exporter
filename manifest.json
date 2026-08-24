@@ -2,7 +2,7 @@
   "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
   "id": "57416ff4-2fb1-4851-a9c1-1014b2572f55",
-  "version": "0.1.1",
+  "version": "1.0.0",
   "name": {
     "short": "Copy as Markdown",
     "full": "Copy as Markdown for Outlook"
@@ -15,7 +15,7 @@
     "name": "mlc",
     "websiteUrl": "https://github.com/mackenzieclark/outlook-markdown-exporter",
     "privacyUrl": "https://github.com/mackenzieclark/outlook-markdown-exporter/blob/main/PRIVACY.md",
-    "termsOfUseUrl": "https://github.com/mackenzieclark/outlook-markdown-exporter/blob/main/LICENSE"
+    "termsOfUseUrl": "https://github.com/mackenzieclark/outlook-markdown-exporter/blob/main/TERMS.md"
   },
   "icons": {
     "outline": "outline.png",
@@ -48,7 +48,7 @@
           "id": "taskpaneRuntime",
           "type": "general",
           "code": {
-            "page": "https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/src/taskpane.html"
+            "page": "https://mackenzieclark.github.io/outlook-markdown-exporter/src/taskpane.html"
           },
           "lifetime": "short",
           "actions": [
@@ -76,9 +76,9 @@
                       "type": "button",
                       "label": "Copy as Markdown",
                       "icons": [
-                        { "size": 16, "url": "https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/assets/icon-16.png" },
-                        { "size": 32, "url": "https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/assets/icon-32.png" },
-                        { "size": 80, "url": "https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/assets/icon-80.png" }
+                        { "size": 16, "url": "https://mackenzieclark.github.io/outlook-markdown-exporter/assets/icon-16.png" },
+                        { "size": 32, "url": "https://mackenzieclark.github.io/outlook-markdown-exporter/assets/icon-32.png" },
+                        { "size": 80, "url": "https://mackenzieclark.github.io/outlook-markdown-exporter/assets/icon-80.png" }
                       ],
                       "supertip": {
                         "title": "Copy as Markdown",

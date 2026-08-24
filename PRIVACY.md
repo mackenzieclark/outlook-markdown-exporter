@@ -21,15 +21,15 @@ Office add-ins are web pages, so the task pane's own files are fetched over
 HTTPS each time it opens:
 
 - `appsforoffice.microsoft.com` — the Office.js library, served by Microsoft.
-- Whichever host the manifest points at (by default `cdn.jsdelivr.net`,
-  mirroring this GitHub repository) — the task pane's HTML, JavaScript, and
-  icons.
+- Whichever host the manifest points at (by default
+  `mackenzieclark.github.io`, this repository's GitHub Pages site) — the
+  task pane's HTML, JavaScript, and icons.
 
 Those hosts see an ordinary web request for a static file, of the kind any web
 page produces: IP address, timestamp, user agent. They receive nothing about
 your mailbox or the message being converted, because no message data is ever
-included in those requests. If you would rather not rely on a third-party CDN,
-host the files yourself — see Option B in the [README](README.md).
+included in those requests. If you would rather not rely on someone else's
+host, host the files yourself — see Option B in the [README](README.md).
 
 ## Changes
 

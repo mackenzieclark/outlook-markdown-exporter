@@ -15,7 +15,7 @@
     "name": "mlc",
     "websiteUrl": "__REPO_URL__",
     "privacyUrl": "__REPO_URL__/blob/main/PRIVACY.md",
-    "termsOfUseUrl": "__REPO_URL__/blob/main/LICENSE"
+    "termsOfUseUrl": "__REPO_URL__/blob/main/TERMS.md"
   },
   "icons": {
     "outline": "outline.png",

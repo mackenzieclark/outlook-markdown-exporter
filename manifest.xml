@@ -5,13 +5,13 @@
            xmlns:mailappor="http://schemas.microsoft.com/office/mailappversionoverrides/1.0"
            xsi:type="MailApp">
   <Id>57416ff4-2fb1-4851-a9c1-1014b2572f55</Id>
-  <Version>0.1.1</Version>
+  <Version>1.0.0</Version>
   <ProviderName>outlook-markdown-exporter</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Copy as Markdown"/>
   <Description DefaultValue="Copy the open email (with quoted thread) to the clipboard as Markdown with YAML frontmatter."/>
-  <IconUrl DefaultValue="https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/assets/icon-64.png"/>
-  <HighResolutionIconUrl DefaultValue="https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/assets/icon-128.png"/>
+  <IconUrl DefaultValue="https://mackenzieclark.github.io/outlook-markdown-exporter/assets/icon-64.png"/>
+  <HighResolutionIconUrl DefaultValue="https://mackenzieclark.github.io/outlook-markdown-exporter/assets/icon-128.png"/>
   <SupportUrl DefaultValue="https://github.com/mackenzieclark/outlook-markdown-exporter"/>
   <Hosts>
     <Host Name="Mailbox"/>
@@ -24,7 +24,7 @@
   <FormSettings>
     <Form xsi:type="ItemRead">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/src/taskpane.html"/>
+        <SourceLocation DefaultValue="https://mackenzieclark.github.io/outlook-markdown-exporter/src/taskpane.html"/>
         <RequestedHeight>450</RequestedHeight>
       </DesktopSettings>
     </Form>
@@ -71,12 +71,12 @@
     </Hosts>
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon16" DefaultValue="https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/assets/icon-16.png"/>
-        <bt:Image id="Icon32" DefaultValue="https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/assets/icon-32.png"/>
-        <bt:Image id="Icon80" DefaultValue="https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/assets/icon-80.png"/>
+        <bt:Image id="Icon16" DefaultValue="https://mackenzieclark.github.io/outlook-markdown-exporter/assets/icon-16.png"/>
+        <bt:Image id="Icon32" DefaultValue="https://mackenzieclark.github.io/outlook-markdown-exporter/assets/icon-32.png"/>
+        <bt:Image id="Icon80" DefaultValue="https://mackenzieclark.github.io/outlook-markdown-exporter/assets/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Taskpane" DefaultValue="https://cdn.jsdelivr.net/gh/mackenzieclark/outlook-markdown-exporter@main/src/taskpane.html"/>
+        <bt:Url id="Taskpane" DefaultValue="https://mackenzieclark.github.io/outlook-markdown-exporter/src/taskpane.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="GroupLabel" DefaultValue="Markdown"/>

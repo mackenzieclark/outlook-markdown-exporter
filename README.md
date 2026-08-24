@@ -61,10 +61,10 @@ to satisfy that; neither needs Node (it's only used by the test harness).
 
 ### Option A: install straight from this repo — no clone, no hosting
 
-Two manifests are committed, both already pointing at this repo through
-[jsDelivr](https://www.jsdelivr.com/), which serves public GitHub repos with
-correct MIME types. Nothing to build or deploy — pick the one that matches
-your client:
+Two manifests are committed, both already pointing at this repo's
+[GitHub Pages](https://mackenzieclark.github.io/outlook-markdown-exporter)
+site, which serves the task pane over HTTPS with correct MIME types. Nothing
+to build or deploy — pick the one that matches your client:
 
 | Client | Download | Manifest type |
 | --- | --- | --- |
@@ -89,12 +89,12 @@ Office**, and it does not install through the *Add from file* dialog above —
 see [sideloading with the unified
 manifest](https://learn.microsoft.com/office/dev/add-ins/testing/sideload-add-in-with-unified-manifest).
 
-Both manifests track `@main`, which jsDelivr caches for up to ~12 hours, so
-updates arrive on that delay. Forks and self-hosters can repoint everything at
-once:
+Both manifests point at the Pages site, which redeploys within about a minute
+of a push, so updates reach installs quickly. Forks and self-hosters can
+repoint everything at once — enable Pages on the fork, then:
 
 ```sh
-./build.sh https://cdn.jsdelivr.net/gh/you/your-fork@main https://github.com/you/your-fork
+./build.sh https://you.github.io/your-fork https://github.com/you/your-fork
 ```
 
 ### Option B: local server — private fork / no public hosting

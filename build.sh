@@ -5,7 +5,7 @@
 # into the task pane. <Version> in manifest.template.xml is the single source of
 # truth for the version number; nothing else needs editing to cut a release.
 #
-#   ./build.sh https://cdn.jsdelivr.net/gh/you/repo@main https://github.com/you/repo
+#   ./build.sh https://you.github.io/your-repo https://github.com/you/your-repo
 #   ./build.sh https://localhost:3000 https://localhost:3000 dist   # local testing
 #
 # Writes <out-dir>/manifest.xml, <out-dir>/manifest.json and the zipped app
