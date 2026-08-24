@@ -62,7 +62,15 @@
     }
     button:hover { border-color: var(--accent); }
     label { display: block; margin: 6px 0; color: var(--fg); }
-    input[type="checkbox"] { accent-color: var(--accent); }
+    input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); }
+    /* Child settings hang off their parent checkbox: indented past the box and
+       ruled, so the nesting reads without needing a second colour. */
+    .child {
+      margin: 0 0 8px 20px; padding-left: 10px;
+      border-left: 2px solid var(--border);
+    }
+    .child[hidden] { display: none; }
+    .child label { margin: 4px 0; }
     #status { margin: 8px 0; min-height: 1.2em; color: var(--fg); }
     #status.ok { color: var(--ok); }
     #status.err { color: var(--err); }
@@ -86,6 +94,12 @@
   </div>
   <label><input type="checkbox" id="frontmatter" checked> YAML frontmatter</label>
   <label><input type="checkbox" id="splitThread" checked> Split quoted replies into sections</label>
+  <label><input type="checkbox" id="stripEmails"> Strip email addresses to names</label>
+  <div class="child" id="nameModeGroup" hidden>
+    <label><input type="radio" name="nameMode" id="nameDisplay" value="display" checked> Display name</label>
+    <label><input type="radio" name="nameMode" id="nameFirst" value="first"> First name only</label>
+    <label><input type="radio" name="nameMode" id="nameAlias" value="alias"> Alias all names</label>
+  </div>
   <div id="status"></div>
   <textarea id="out" spellcheck="false"></textarea>
   <footer>
@@ -95,6 +109,6 @@
   <!-- The ?v= must match VERSION in taskpane.js. Outlook caches add-in
        subresources in its own file cache, which ignores Cache-Control, so a
        changed URL is the only reliable way to ship a JS update. -->
-  <script src="taskpane.js?v=1.0.0.0"></script>
+  <script src="taskpane.js?v=1.1.0.0"></script>
 </body>
 </html>

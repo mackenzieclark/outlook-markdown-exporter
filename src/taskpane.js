@@ -115,6 +115,253 @@
     return sections;
   }
 
+  // ---------- people ----------
+  // "Strip email addresses to names" rewrites every place a person can appear
+  // in the finished Markdown: frontmatter from/to/cc, the "## Sender — date"
+  // thread headers, the **From:/To:/Cc:** blocks quoted inside the body, bare
+  // addresses in prose, and mailto: links.
+  //
+  // Aliases are keyed on the lowercased ADDRESS, never on the display name.
+  // One person turns up as "Bob", "Bob Smith" and "bob@example.com" in the same
+  // thread, and two different people can share a display name, so the address
+  // is the identity. Numbers are handed out in order of first appearance in the
+  // document — no hashing, no object key order — so the same message always
+  // produces the same aliases. A first pass links display names to addresses
+  // before any number is assigned, which is what lets a name-only mention in a
+  // quoted header ("**From:** Bob") resolve to the same alias as the addressed
+  // copies, even when the name-only one comes first.
+
+  var EMAIL_SRC = "[A-Za-z0-9._%+\\-]+@[A-Za-z0-9\\-]+(?:\\.[A-Za-z0-9\\-]+)*\\.[A-Za-z]{2,}";
+  // Inside a header field the entire value is people, so a display name may be
+  // anything up to the angle bracket. The same pattern in running prose would
+  // swallow the sentence in front of the address ("write to <bob@…>"), so there
+  // a name has to look like one: up to four capitalised words.
+  var FIELD_NAME_SRC = "(?:\"([^\"\\r\\n]*)\"|([^<>;,\\r\\n]*?))";
+  var TEXT_NAME_SRC = "(?:\"([^\"\\r\\n]{1,80})\"|" +
+    "((?:[A-Z\\u00c0-\\u024f][^\\s<>;,]*)(?:[ \\u00a0][A-Z\\u00c0-\\u024f][^\\s<>;,]*){0,3})?)";
+  var FM_PERSON_KEY = /^(from|to|cc|bcc|reply_to)$/;
+  var QUOTE_LABEL = /^\*\*[A-Za-z-]+\s*:\*\*$/;
+  var QUOTE_PERSON_LABEL = /^\*\*(from|to|cc|bcc|reply-to)\s*:\*\*$/i;
+
+  // Alternation, in match order: [text](mailto:…) | mailto:… | Name <addr> |
+  // bare addr. Group layout is fixed so one scanner handles both name patterns:
+  // 1 link text, 2 link address, 3 mailto address, 4/5 quoted/plain name,
+  // 6 bracketed address, 7 the character in front of a bare address, 8 it.
+  function addrSrc(nameSrc) {
+    return "\\[([^\\]\\r\\n]*)\\]\\(\\s*mailto:(" + EMAIL_SRC + ")[^)\\r\\n]*\\)" +
+      "|<?\\s*mailto:(" + EMAIL_SRC + ")\\s*>?" +
+      "|" + nameSrc + "\\s*<\\s*(" + EMAIL_SRC + ")\\s*>" +
+      "|(^|[^A-Za-z0-9._%+\\-@/])(" + EMAIL_SRC + ")";
+  }
+
+  function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function cleanName(s) {
+    return String(s == null ? "" : s)
+      .replace(/[\s ]+/g, " ")
+      .replace(/^[\s"']+|[\s"',;]+$/g, "");
+  }
+  function normName(s) { return cleanName(s).toLowerCase(); }
+
+  function newPeople() {
+    return {
+      byName: {},  // display name -> address
+      byFirst: {}, // first word of a display name -> address, "" once ambiguous
+      nameOf: {},  // address -> display name as first seen
+      alias: {},   // identity key -> "UserN"
+      count: 0,
+    };
+  }
+
+  function learnPerson(p, name, email) {
+    var a = String(email || "").toLowerCase();
+    var n = normName(name);
+    var f;
+    if (!a || !n || n === a) return;
+    if (!has(p.byName, n)) p.byName[n] = a;
+    if (!has(p.nameOf, a)) p.nameOf[a] = cleanName(name);
+    f = n.split(" ")[0];
+    if (!has(p.byFirst, f)) p.byFirst[f] = a;
+    else if (p.byFirst[f] !== a) p.byFirst[f] = "";
+  }
+
+  function personKey(p, name, email) {
+    var n = normName(name);
+    var f;
+    if (email) return "a:" + String(email).toLowerCase();
+    if (!n) return "";
+    if (has(p.byName, n)) return "a:" + p.byName[n];
+    f = n.split(" ")[0];
+    if (has(p.byFirst, f) && p.byFirst[f]) return "a:" + p.byFirst[f];
+    return "n:" + n; // nothing to tie this name to; still stable within the run
+  }
+
+  function aliasFor(p, key) {
+    if (!has(p.alias, key)) { p.count += 1; p.alias[key] = "User" + p.count; }
+    return p.alias[key];
+  }
+
+  function displayFor(p, name, email) {
+    var a = String(email || "").toLowerCase();
+    var disp = cleanName(name);
+    var local;
+    if (!disp || disp.toLowerCase() === a) disp = a && has(p.nameOf, a) ? p.nameOf[a] : "";
+    if (!disp && a) {
+      // The message never spells this address out as a name, so the local part
+      // is the only thing left to call the person.
+      local = a.split("@")[0].split(/[._+\-]/)[0];
+      disp = local ? local.charAt(0).toUpperCase() + local.slice(1) : "";
+    }
+    return disp;
+  }
+
+  function firstNameOf(disp) {
+    var s = disp.indexOf(",") >= 0 ? disp.slice(disp.lastIndexOf(",") + 1) : disp; // "Smith, Bob"
+    return cleanName(s).split(" ")[0];
+  }
+
+  function personLabel(p, name, email, mode) {
+    var key, disp;
+    if (mode === "alias") {
+      key = personKey(p, name, email);
+      return key ? aliasFor(p, key) : cleanName(name);
+    }
+    disp = displayFor(p, name, email);
+    if (mode === "first") disp = firstNameOf(disp);
+    return disp || cleanName(name);
+  }
+
+  // Rewrite every address-shaped match in s, handing the gaps between them to
+  // gap() — verbatim in prose, person-by-person inside a header field.
+  function scanAddrs(s, nameSrc, gap, visit) {
+    var re = new RegExp(addrSrc(nameSrc), "g");
+    var out = "";
+    var last = 0;
+    var m, name, email, pre;
+    while ((m = re.exec(s))) {
+      pre = "";
+      if (m[2] != null) { name = m[1]; email = m[2]; }
+      else if (m[3] != null) { name = ""; email = m[3]; }
+      else if (m[6] != null) {
+        name = m[4] != null ? m[4] : (m[5] != null ? m[5] : "");
+        email = m[6];
+        // An unquoted display name absorbs the space that separated it from
+        // "**From:**" or from the previous recipient; put it back.
+        if (m[4] == null) pre = /^\s*/.exec(name)[0];
+      } else { name = ""; email = m[8]; pre = m[7]; }
+      out += gap(s.slice(last, m.index), visit) + pre + visit(name, email);
+      last = m.index + m[0].length;
+    }
+    return out + gap(s.slice(last), visit);
+  }
+
+  function keepGap(g) { return g; }
+
+  // A gap inside a header field is the recipients that carry no address, e.g.
+  // "**To:** Bob" or "Alice; Bob <bob@example.com>".
+  function looksLikeName(s) {
+    if (!/[A-Za-zÀ-ɏ]/.test(s)) return false;
+    if (s.length > 60) return false;
+    if (/[*|<>@:]/.test(s)) return false;
+    if (/\d{4}/.test(s)) return false; // a date, not a person
+    return s.split(/\s+/).length <= 5;
+  }
+
+  function nameGap(g, visit) {
+    if (!g) return "";
+    return g.split(/([;,])/).map(function (part) {
+      var m;
+      if (part === ";" || part === ",") return part;
+      m = /^(\s*)([\s\S]*?)(\s*)$/.exec(part);
+      if (!m[2] || !looksLikeName(m[2])) return part;
+      return m[1] + visit(m[2], "") + m[3];
+    }).join("");
+  }
+
+  function fieldText(s, visit) { return scanAddrs(s, FIELD_NAME_SRC, nameGap, visit); }
+  function proseText(s, visit) { return scanAddrs(s, TEXT_NAME_SRC, keepGap, visit); }
+
+  // Frontmatter values are JSON strings; unwrap, rewrite, re-quote.
+  function fmValue(raw, visit) {
+    var parsed = null;
+    var quoted = false;
+    var v = raw;
+    try { parsed = JSON.parse(raw); } catch (e) { /* bare scalar, e.g. [] */ }
+    if (typeof parsed === "string") { v = parsed; quoted = true; }
+    v = fieldText(v, visit);
+    return quoted ? yamlStr(v) : v;
+  }
+
+  function bodyLine(line, visit) {
+    // "## Bob <bob@example.com> — Tuesday…": everything before the em dash is
+    // the sender, the tail is a date.
+    var m = /^(##\s+)([\s\S]*?)(\s—\s[\s\S]*)$/.exec(line);
+    var parts, res, isPerson, j;
+    if (m) return m[1] + fieldText(m[2], visit) + proseText(m[3], visit);
+    // Quoted header block. Splitting on the bold labels keeps "**Sent:**" and
+    // "**Subject:**" out of the person handling even when Outlook runs the
+    // whole block onto one line.
+    if (/\*\*[A-Za-z-]+\s*:\*\*/.test(line)) {
+      parts = line.split(/(\*\*[A-Za-z-]+\s*:\*\*)/);
+      res = "";
+      isPerson = false;
+      for (j = 0; j < parts.length; j++) {
+        if (QUOTE_LABEL.test(parts[j])) {
+          isPerson = QUOTE_PERSON_LABEL.test(parts[j]);
+          res += parts[j];
+        } else {
+          res += isPerson ? fieldText(parts[j], visit) : proseText(parts[j], visit);
+        }
+      }
+      return res;
+    }
+    return proseText(line, visit);
+  }
+
+  // One walk of the document, in reading order, calling visit(name, email) at
+  // every person. Used twice: once to learn, once to rewrite.
+  function walkPeople(md, visit) {
+    var lines = md.split("\n");
+    var fm = lines[0] === "---";
+    var key = "";
+    var out = [];
+    var i, line, m;
+    for (i = 0; i < lines.length; i++) {
+      line = lines[i];
+      if (fm && i > 0) {
+        if (line === "---") { fm = false; out.push(line); continue; }
+        m = /^([A-Za-z_][A-Za-z0-9_]*):[ \t]*([\s\S]*)$/.exec(line);
+        if (m) {
+          key = m[1].toLowerCase();
+          // message_id and conversation_id are addresses in shape only.
+          out.push(FM_PERSON_KEY.test(key) && m[2] ? m[1] + ": " + fmValue(m[2], visit) : line);
+          continue;
+        }
+        m = /^([ \t]*-[ \t]+)([\s\S]*)$/.exec(line);
+        if (m && FM_PERSON_KEY.test(key)) { out.push(m[1] + fmValue(m[2], visit)); continue; }
+        out.push(line);
+        continue;
+      }
+      out.push(bodyLine(line, visit));
+    }
+    return out.join("\n");
+  }
+
+  function stripAddresses(md, mode) {
+    var p = newPeople();
+    // Pass one only records who is who; its output is thrown away so that no
+    // alias number is assigned before every name-to-address link is known.
+    walkPeople(md, function (name, email) { learnPerson(p, name, email); return ""; });
+    return walkPeople(md, function (name, email) { return personLabel(p, name, email, mode); });
+  }
+
+  function nameMode() {
+    if ($("nameAlias").checked) return "alias";
+    if ($("nameFirst").checked) return "first";
+    return "display";
+  }
+
+  function syncNameMode() { $("nameModeGroup").hidden = !$("stripEmails").checked; }
+
   // ---------- conversion ----------
   function makeTurndown() {
     var td = new TurndownService({
@@ -168,7 +415,12 @@
     } else {
       out += tidy(td.turndown(body.innerHTML));
     }
-    return tidy(out);
+    out = tidy(out);
+    // Runs over the finished Markdown so that one pass covers frontmatter,
+    // section headers, quoted header blocks and prose alike — and so that
+    // "order of first appearance" means order in the document the user gets.
+    if ($("stripEmails").checked) out = tidy(stripAddresses(out, nameMode()));
+    return out;
   }
 
   // ---------- theme ----------
@@ -255,6 +507,11 @@
     $("download").addEventListener("click", function () { download(); });
     $("frontmatter").addEventListener("change", function () { render(false); });
     $("splitThread").addEventListener("change", function () { render(false); });
+    $("stripEmails").addEventListener("change", function () { syncNameMode(); render(false); });
+    $("nameDisplay").addEventListener("change", function () { render(false); });
+    $("nameFirst").addEventListener("change", function () { render(false); });
+    $("nameAlias").addEventListener("change", function () { render(false); });
+    syncNameMode();
     applyTheme();
     showBuild();
     render(true);

@@ -49,6 +49,13 @@ Alice, can you send the status?
 - Splits the quoted history at Outlook's reply boundaries (`divRplyFwdMsg`,
   `appendonsend`, Gmail quotes, `border-top` header blocks) into `##` sections
   titled by sender and date. Toggle off to get the body verbatim.
+- Optionally strips email addresses back to the person — their **display
+  name**, their **first name**, or a stable **alias** (`User1`, `User2`, …)
+  when you want to hand a thread to an LLM without handing over anyone's
+  address. Aliases are keyed on the address rather than the display name and
+  numbered in order of first appearance, so one person is the same `UserN` in
+  the frontmatter, in the section headers and in the quoted `From:`/`To:`
+  blocks — and the same message always produces the same aliases.
 - Converts as soon as the pane opens; **Copy Markdown** puts it on the
   clipboard (the clipboard API only accepts a real click, so the copy waits
   for one) and **Save .md** downloads it.
@@ -139,8 +146,11 @@ rejects versions below `1.0.0`.
 ```sh
 cd test && npm i && node run.js
 ```
-Runs the conversion against `test/sample.html` (a synthetic Outlook/Word reply
-chain) under jsdom with a stubbed `Office` object and prints the Markdown.
+Loads the real `src/taskpane.html` under jsdom with a stubbed `Office` object,
+converts two synthetic Outlook/Word reply chains (`test/sample.html` and a
+second fixture built into the harness), prints the Markdown for each option
+combination, then asserts the results — including that aliases stay pinned to
+the same person everywhere they appear. No test framework; `assert` only.
 
 ## Limitations
 
@@ -151,6 +161,17 @@ chain) under jsdom with a stubbed `Office` object and prints the Markdown.
   registration with tenant consent — planned as an optional v2.
 - Header detection relies on Outlook's `From: / Sent: / To:` block; other
   clients' quote formats fall back to `Quoted message N`.
+- **Stripping addresses covers addresses, not prose.** It rewrites the
+  frontmatter `from`/`to`/`cc`, the `##` section headers, the quoted
+  `From:`/`To:`/`Cc:` blocks, bare addresses and `mailto:` links. A name that
+  only ever appears in running text ("Hi Bob,") is left as written — there is
+  no dependable way to tell a person's name from an ordinary word, and
+  guessing would chew up the body. `message_id` is left alone too: it is an
+  address in shape only, not a person.
+- A quoted header that names someone with no address anywhere in the message
+  (`**From:** Bob`, and Bob never appears as `Bob <…>`) gets an alias of its
+  own. It stays stable through the conversion, but nothing can prove it is the
+  same Bob as an address elsewhere in the thread.
 - Inline images are dropped; linked images become `![alt](url)`.
 - Tables that Outlook emits without a real header row (`MsoNormalTable`, all
   `<td>`) are passed through as raw HTML, because the GFM converter only
