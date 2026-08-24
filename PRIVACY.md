@@ -7,13 +7,29 @@ reads the message you have open through the Office.js API, converts it to
 Markdown in the page, and hands the result to your clipboard or a downloaded
 `.md` file. The message body, its metadata, and the quoted thread never leave
 the task pane. There is no server component, no account, no telemetry, no
-analytics, and no local storage.
+analytics, and no tracking of any kind. The only thing the add-in stores is
+your own checkbox settings — see "Your settings" below.
 
 ## What the add-in requests
 
 `ReadItem` (`MailboxItem.Read.User`) — read-only access to the message
 currently open. The add-in cannot read your other mail, send mail, or modify
 anything in your mailbox.
+
+## Your settings
+
+The task pane is rebuilt every time it opens, so your choice of options would
+otherwise reset on every message. To avoid that, the add-in saves the state of
+its checkboxes and radio buttons — and nothing else — using Office's
+`roamingSettings` API, which stores them **in your own mailbox**. That is why
+the settings follow you to Outlook on the web and to other machines.
+
+What is stored is five values: whether each option is on, and which name mode
+is selected. No message content, no addresses, no names. Microsoft notes that
+roaming settings are not secure storage and can be read by other services with
+access to your mailbox, such as Microsoft Graph, which is precisely why
+nothing sensitive is put there. Clearing them is a matter of removing the
+add-in.
 
 ## Network requests
 

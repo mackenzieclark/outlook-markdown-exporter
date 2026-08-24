@@ -43,9 +43,25 @@ Alice, can you send the status?
 - Reads the message via Office.js (`item.body.getAsync(Html)` + item metadata).
 - Strips Outlook/Word HTML noise (`<o:p>`, conditional comments, styles,
   inline `cid:` images, empty `MsoNormal` paragraphs).
-- Unwraps Defender Safe Links back to the real URL.
+- Unwraps gateway-rewritten links back to the real URL. Defender Safe Links
+  keep the target in `?url=`, so it comes back exactly; Mimecast and friends
+  hash it away, and there the fallback is the anchor text when the text is
+  itself a URL.
+- Sorts Outlook's tables out before conversion. Outlook builds signatures,
+  logo strips and two-column arrangements out of borderless `<td>` tables, and
+  the GFM converter passes anything without a `<th>` header row straight
+  through as raw HTML. **Layout** tables are unwrapped into ordinary blocks, so
+  the text survives and the link handling applies to it; **data** tables get a
+  real header row — promoted from a bold first row, or synthesized empty when
+  there is none, so no data row is eaten to make one.
 - Converts with [Turndown](https://github.com/mixmark-io/turndown) + GFM plugin
   (tables, strikethrough, task lists).
+- Optionally strips **signatures and boilerplate** (on by default): signature
+  blocks, "Sent from my iPhone" client footers, confidentiality disclaimers,
+  image-only social icon rows, and 1×1 tracking pixels. A signature is
+  recognised by shape — a layout table holding a handful of short lines, one of
+  which is an address — not by the address alone, so prose that quotes an
+  address is left alone, and so is a "Thanks, / Bob" sign-off.
 - Splits the quoted history at Outlook's reply boundaries (`divRplyFwdMsg`,
   `appendonsend`, Gmail quotes, `border-top` header blocks) into `##` sections
   titled by sender and date. Toggle off to get the body verbatim.
@@ -59,6 +75,8 @@ Alice, can you send the status?
 - Converts as soon as the pane opens; **Copy Markdown** puts it on the
   clipboard (the clipboard API only accepts a real click, so the copy waits
   for one) and **Save .md** downloads it.
+- Remembers your option choices between messages, stored in your own
+  mailbox via Office `roamingSettings` (settings only — never message content).
 
 ## Install (sideload)
 
@@ -147,10 +165,13 @@ rejects versions below `1.0.0`.
 cd test && npm i && node run.js
 ```
 Loads the real `src/taskpane.html` under jsdom with a stubbed `Office` object,
-converts two synthetic Outlook/Word reply chains (`test/sample.html` and a
-second fixture built into the harness), prints the Markdown for each option
-combination, then asserts the results — including that aliases stay pinned to
-the same person everywhere they appear. No test framework; `assert` only.
+converts four synthetic fixtures (`test/sample.html` plus three built into the
+harness: a reply chain with awkward names, a nested signature table with
+boilerplate, and a pair of data tables with protector-rewritten links), prints
+the Markdown for each option combination, then asserts the results — including
+that aliases stay pinned to the same person everywhere they appear, and that no
+`<table>`, cell tag or inline style ever reaches the output. No test framework;
+`assert` only.
 
 ## Limitations
 
@@ -173,9 +194,21 @@ the same person everywhere they appear. No test framework; `assert` only.
   own. It stays stable through the conversion, but nothing can prove it is the
   same Bob as an address elsewhere in the thread.
 - Inline images are dropped; linked images become `![alt](url)`.
-- Tables that Outlook emits without a real header row (`MsoNormalTable`, all
-  `<td>`) are passed through as raw HTML, because the GFM converter only
-  handles tables whose first row is `<th>`.
+- **Layout vs. data is a judgement call.** A table counts as data when it is at
+  least 2×2, every row has the same number of cells, no cell contains another
+  table, and no cell holds a stack of blocks (unless the table has a visible
+  `border`, which settles it as a grid). Everything else is unwrapped. So a
+  one-row or one-column data table reads as layout and comes out as plain
+  blocks, and a genuine 2×2 arrangement of one-liners reads as data and comes
+  out as a table with an empty header. Nothing is lost either way — only the
+  shape changes.
+- A protector that neither exposes the URL in the href nor is given a URL as
+  its link text keeps the rewritten href; nothing can recover the target from
+  a hash.
+- Boilerplate stripping matches phrases. A disclaimer paragraph carrying none
+  of the known phrases, next to ones that do, survives on its own; a signature
+  that is not in a table (just `<br>`-separated lines) is not detected either.
+  Turn the checkbox off to get everything verbatim.
 - Requires Mailbox requirement set 1.8 (any current Outlook).
 
 ## Privacy

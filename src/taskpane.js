@@ -57,7 +57,7 @@
   }
 
   // ---------- HTML cleanup ----------
-  function cleanHtml(html) {
+  function cleanHtml(html, strip) {
     var doc = new DOMParser().parseFromString(html, "text/html");
     var kill = "style, script, head, meta, link, title, o\\:p, xml, " +
       "img[src^='cid:'], [style*='display:none'], [style*='display: none']";
@@ -67,11 +67,289 @@
     var comments = [];
     while (walker.nextNode()) comments.push(walker.currentNode);
     comments.forEach(function (c) { c.remove(); });
+    // Boilerplate goes first: what identifies a signature is the little stack of
+    // short lines inside a layout table, and normalizeTables is about to take
+    // that table apart.
+    if (strip) removeBoilerplate(doc.body);
+    normalizeTables(doc.body);
     // Word/Outlook puts paragraphs in <p class=MsoNormal> with &nbsp; fillers
     doc.querySelectorAll("p").forEach(function (p) {
       if (p.textContent.replace(/ /g, "").trim() === "" && !p.querySelector("img")) p.remove();
     });
     return doc.body;
+  }
+
+  // ---------- tables ----------
+  // turndown-plugin-gfm converts a <table> only when every cell of its first row
+  // is a <th>. Everything else it hands to keep(), which emits the element's raw
+  // outerHTML — and Turndown does not descend into a kept element, so the
+  // safelinks and empty-link rules never ran inside one either. Outlook builds
+  // every signature, logo strip and two-column arrangement out of borderless
+  // <td> tables, so in practice that put <table style="…"> blobs in the output
+  // and took the link handling down with them. The two shapes need two different
+  // answers, and cleanHtml settles both before Turndown ever sees the element.
+
+  var CELL_BLOCK = "p, div, table, ul, ol, blockquote, pre, hr, h1, h2, h3, h4, h5, h6";
+  var BLOCK_NAME = /^(P|DIV|TD|TH|TR|TABLE|THEAD|TBODY|TFOOT|LI|UL|OL|DL|DT|DD|H[1-6]|BLOCKQUOTE|PRE|HR|SECTION|ARTICLE|HEADER|FOOTER)$/;
+
+  function list(nodes) { return Array.prototype.slice.call(nodes); }
+  function flat(s) { return String(s == null ? "" : s).replace(/[\s ]+/g, " ").trim(); }
+  function textOf(n) { return flat(n.textContent); }
+
+  // Direct rows and cells only. table.rows would be ambiguous about a table
+  // nested inside a cell, and telling those two apart is the whole job here.
+  function tableRows(t) {
+    var out = [];
+    var push = function (r) { if (r.nodeName === "TR") out.push(r); };
+    list(t.childNodes).forEach(function (n) {
+      if (n.nodeName === "TR") push(n);
+      else if (/^(THEAD|TBODY|TFOOT)$/.test(n.nodeName)) list(n.childNodes).forEach(push);
+    });
+    return out;
+  }
+
+  function rowCells(tr) {
+    return list(tr.childNodes).filter(function (n) {
+      return n.nodeName === "TD" || n.nodeName === "TH";
+    });
+  }
+
+  function unwrapNode(n) {
+    var p = n.parentNode;
+    while (n.firstChild) p.insertBefore(n.firstChild, n);
+    p.removeChild(n);
+  }
+
+  // Outlook writes a header row as bold text in ordinary <td>s far more often
+  // than as <th>, so both count as one.
+  function isBoldCell(c) {
+    var t = textOf(c).replace(/\s/g, "");
+    var seen = "";
+    if (!t) return false;
+    list(c.querySelectorAll("b, strong")).forEach(function (b) { seen += textOf(b); });
+    if (seen.replace(/\s/g, "").indexOf(t) >= 0) return true;
+    return /font-weight\s*:\s*(bold|[6-9]00)/i.test(c.getAttribute("style") || "");
+  }
+
+  function headerRow(t) {
+    var first = tableRows(t)[0];
+    var cells = first ? rowCells(first) : [];
+    if (!cells.length) return null;
+    if (cells.every(function (c) { return c.nodeName === "TH"; })) return first;
+    if (cells.every(isBoldCell)) return first;
+    return null;
+  }
+
+  function tableShape(t) {
+    var s = { rows: 0, cols: 0, uniform: true, complex: false, nested: false };
+    var rows = tableRows(t);
+    s.rows = rows.length;
+    rows.forEach(function (tr, i) {
+      var cs = rowCells(tr);
+      if (i === 0) s.cols = cs.length;
+      else if (cs.length !== s.cols) s.uniform = false;
+      cs.forEach(function (c) {
+        if (c.querySelector("table")) s.nested = true;
+        if (c.querySelectorAll(CELL_BLOCK).length > 1) s.complex = true;
+        if (c.getAttribute("colspan") || c.getAttribute("rowspan")) s.complex = true;
+      });
+    });
+    return s;
+  }
+
+  // A grid, or an arrangement? A data table is at least two rows by two columns,
+  // has the same number of cells in every row, and holds nothing but simple cell
+  // content — and has no table inside a cell, which is the giveaway that the
+  // outer one is scaffolding. A drawn border rescues the awkward middle: a table
+  // Outlook gave visible rules to is a grid even when its cells are busy.
+  function isDataTable(t) {
+    var s = tableShape(t);
+    if (s.rows < 2 || s.cols < 2) return false;
+    if (s.nested || !s.uniform) return false;
+    if (headerRow(t)) return true;
+    if (s.complex) return /^[1-9]/.test(t.getAttribute("border") || "");
+    return true;
+  }
+
+  // gfm reads rows[0] and asks isHeadingRow(); a <thead> answers yes whatever
+  // colgroups or stray sections Outlook left lying around inside the table.
+  function headTable(t, tr) {
+    var head = t.ownerDocument.createElement("thead");
+    head.appendChild(tr);
+    t.insertBefore(head, t.firstChild);
+  }
+
+  function toTh(td) {
+    var th = td.ownerDocument.createElement("th");
+    var align = td.getAttribute("align");
+    if (align) th.setAttribute("align", align);
+    while (td.firstChild) th.appendChild(td.firstChild);
+    td.parentNode.replaceChild(th, td);
+  }
+
+  // gfm works out a cell's column from its index among the row's childNodes, so
+  // the newlines Outlook leaves between </td> and <td> would shift every column
+  // by one and lose the leading pipe.
+  function tidyRow(tr) {
+    list(tr.childNodes).forEach(function (n) {
+      if (n.nodeType === 3 && !flat(n.nodeValue)) tr.removeChild(n);
+    });
+  }
+
+  function makeConvertible(t) {
+    var hr = headerRow(t);
+    var tr, i, cols;
+    tableRows(t).forEach(tidyRow);
+    if (hr) {
+      rowCells(hr).forEach(function (c) { if (c.nodeName !== "TH") toTh(c); });
+      // It is a header row now; leaving the bold on would render it as ** **.
+      list(hr.querySelectorAll("b, strong")).forEach(unwrapNode);
+      headTable(t, hr);
+      return;
+    }
+    // Nothing to promote, so synthesize an empty header. A label/value table has
+    // no header row at all, and eating its first row to make one would silently
+    // drop a pair.
+    cols = tableShape(t).cols;
+    tr = t.ownerDocument.createElement("tr");
+    for (i = 0; i < cols; i++) tr.appendChild(t.ownerDocument.createElement("th"));
+    headTable(t, tr);
+  }
+
+  // Replace a layout table with its cells' contents as blocks, in document
+  // order, so the text survives and every inner rule gets to run on it.
+  function unwrapTable(t) {
+    var d = t.ownerDocument;
+    var frag = d.createDocumentFragment();
+    tableRows(t).forEach(function (tr) {
+      rowCells(tr).forEach(function (c) {
+        var div;
+        if (!textOf(c) && !c.querySelector("img, hr")) return; // spacer cell
+        div = d.createElement("div");
+        while (c.firstChild) div.appendChild(c.firstChild);
+        frag.appendChild(div);
+      });
+    });
+    t.parentNode.replaceChild(frag, t);
+  }
+
+  function normalizeTables(body) {
+    // Innermost first. A nested table always follows its container in document
+    // order, so walking the list backwards settles the children before the
+    // parent, and the parent is then classified on what its cells became. Real
+    // signatures nest three deep, which is exactly this case.
+    list(body.querySelectorAll("table")).reverse().forEach(function (t) {
+      if (!body.contains(t)) return;
+      if (!tableRows(t).length) { t.remove(); return; }
+      if (isDataTable(t)) makeConvertible(t); else unwrapTable(t);
+    });
+  }
+
+  // ---------- signatures and boilerplate ----------
+  var CLIENT_FOOTER = /^(sent from my [\w' ]{1,24}|sent from mail for windows|sent from outlook( for (ios|android))?|get outlook for (ios|android))[.!]?$/i;
+  var DISCLAIMER = /(intended recipient|confidentiality notice|privileged and confidential|received this (e-?mail |message |transmission )?in error|this e-?mail and any attachments|notify the sender (immediately )?and delete)/i;
+  var BOILER_SEL = "p, div, td, th, table, blockquote, span, font, section";
+  var EMPTY_SEL = "p, div, span, font, table, blockquote";
+
+  // Lines as the reader sees them: <br> and every block boundary start a new
+  // one. A signature is a stack of these; a paragraph of prose is one long one.
+  function textLines(el) {
+    var out = [];
+    var buf = "";
+    var flush = function () { var s = flat(buf); if (s) out.push(s); buf = ""; };
+    var walk = function (n) {
+      list(n.childNodes).forEach(function (c) {
+        if (c.nodeType === 3) buf += c.nodeValue;
+        else if (c.nodeName === "BR") flush();
+        else if (BLOCK_NAME.test(c.nodeName)) { flush(); walk(c); flush(); }
+        else walk(c);
+      });
+    };
+    walk(el);
+    flush();
+    return out;
+  }
+
+  function hasAddress(s) { return new RegExp(EMAIL_SRC).test(s); }
+
+  // With the table handling above in place the signal is reliable: a layout
+  // table whose text is a handful of short lines and carries an address is a
+  // signature — name, job title, phone, address, company site. An address on its
+  // own is not enough, because prose quotes addresses too; the short-line shape
+  // has to be there as well.
+  function isSignatureTable(t) {
+    var lines = textLines(t);
+    var text = lines.join(" ");
+    if (lines.length < 2 || lines.length > 10) return false;
+    if (text.length > 400 || !hasAddress(text)) return false;
+    if (isDataTable(t)) return false;
+    return lines.every(function (l) { return l.length <= 80; });
+  }
+
+  function tinyImg(im) {
+    var s = im.getAttribute("style") || "";
+    var dim = function (prop) {
+      var m = new RegExp(prop + "\\s*:\\s*([\\d.]+)", "i").exec(s);
+      var v = m ? parseFloat(m[1]) : parseFloat(im.getAttribute(prop));
+      return isNaN(v) ? Infinity : v;
+    };
+    return dim("width") <= 2 || dim("height") <= 2;
+  }
+
+  // A parent absorbs the matched block only if it holds nothing else: no loose
+  // text of its own, and every block inside it is disclaimer too. That is what
+  // stops the climb from swallowing a short message whose last paragraph happens
+  // to be the legal footer.
+  function onlyDisclaimer(el) {
+    var own = "";
+    var kids = list(el.children);
+    if (!kids.length || textOf(el).length > 1500) return false;
+    if (el.querySelector("div#divRplyFwdMsg, div#appendonsend")) return false;
+    list(el.childNodes).forEach(function (c) { if (c.nodeType === 3) own += c.nodeValue; });
+    if (flat(own)) return false;
+    return kids.every(function (c) { return !textOf(c) || DISCLAIMER.test(textOf(c)); });
+  }
+
+  // A disclaimer is usually several paragraphs inside one wrapper, so climb from
+  // the block that matched up to the wrapper — and no further.
+  function disclaimerRoot(n, body) {
+    var p = n.parentNode;
+    while (p && p !== body && p.nodeType === 1 && !p.id && onlyDisclaimer(p)) {
+      n = p; p = n.parentNode;
+    }
+    return n;
+  }
+
+  function removeBoilerplate(body) {
+    // Tracking pixels and layout spacers.
+    list(body.querySelectorAll("img")).forEach(function (im) {
+      if (tinyImg(im)) im.remove();
+    });
+    // Social icon strips: an anchor wrapping only an image has no text to keep.
+    list(body.querySelectorAll("a")).forEach(function (a) {
+      if (!textOf(a)) a.remove();
+    });
+    // Signatures, outermost first so a nested one goes with its container.
+    list(body.querySelectorAll("table")).forEach(function (t) {
+      if (body.contains(t) && isSignatureTable(t)) t.remove();
+    });
+    // Client footers: the whole block is the footer, or it is not one at all.
+    list(body.querySelectorAll(BOILER_SEL)).forEach(function (n) {
+      if (body.contains(n) && CLIENT_FOOTER.test(textOf(n))) n.remove();
+    });
+    // Legal disclaimers, innermost first, so the climb starts at the match and
+    // not at some wrapper that happens to contain the whole message.
+    list(body.querySelectorAll(BOILER_SEL)).reverse().forEach(function (n) {
+      if (body.contains(n) && DISCLAIMER.test(textOf(n))) disclaimerRoot(n, body).remove();
+    });
+    // Whatever the removals emptied out. Children first, so a container left
+    // holding nothing but empty children goes too. Anything with an id stays:
+    // splitThread uses empty #appendonsend / #divRplyFwdMsg divs as markers.
+    list(body.querySelectorAll(EMPTY_SEL)).reverse().forEach(function (n) {
+      if (!body.contains(n) || n.id) return;
+      if (textOf(n) || n.querySelector("img, hr")) return;
+      n.remove();
+    });
   }
 
   // Split the body at quoted-reply boundaries. Outlook marks these with
@@ -362,6 +640,52 @@
 
   function syncNameMode() { $("nameModeGroup").hidden = !$("stripEmails").checked; }
 
+  // ---------- link protectors ----------
+  // Mail gateways rewrite every href in the body to point at themselves. Two
+  // kinds, and they need different treatment. Defender keeps the real URL in the
+  // ?url= parameter, so it can be recovered exactly. Mimecast and its like hash
+  // it into an opaque path — nothing in the href can be decoded back. For those
+  // the visible text is the only thing left, and it is a safe fallback in the
+  // one case that matters: a protector wrapped a link whose text is itself a
+  // URL, so the text is the link. Anything else keeps the rewritten href rather
+  // than guess.
+  var SAFELINK_HOST = /(^|\.)safelinks\.protection\.outlook\.com$/i;
+  var PROTECTOR_HOST = /(^|\.)(mimecastprotect\.com|mimecast\.com|urldefense\.com|urldefense\.proofpoint\.com|protect\.checkpoint\.com|clicktime\.symantec\.com|linkprotect\.cudasvc\.com|protection\.inkyphishfence\.com)$/i;
+
+  function hostOf(href) {
+    try { return new URL(href).hostname; } catch (e) { return ""; }
+  }
+
+  function param(href, name) {
+    try { return new URL(href).searchParams.get(name) || ""; } catch (e) { return ""; }
+  }
+
+  function decodeOnce(s) {
+    try { return decodeURIComponent(s); } catch (e) { return s; }
+  }
+
+  // A plain URL standing on its own, which is what an unstyled pasted link looks
+  // like once a gateway has rewritten the href out from under it.
+  function textUrl(s) {
+    var t = flat(s).replace(/[)>.,;]+$/, "");
+    if (/^https?:\/\/[^\s]+$/i.test(t)) return t;
+    if (/^www\.[^\s/]+\.[A-Za-z]{2,}(\/[^\s]*)?$/.test(t)) return "https://" + t;
+    return "";
+  }
+
+  function isProtectedLink(n) {
+    var host = n.nodeName === "A" ? hostOf(n.getAttribute("href") || "") : "";
+    return !!host && (SAFELINK_HOST.test(host) || PROTECTOR_HOST.test(host));
+  }
+
+  function realHref(n, content) {
+    var raw = n.getAttribute("href") || "";
+    var url = param(raw, "url") || param(raw, "u");
+    if (SAFELINK_HOST.test(hostOf(raw))) return decodeOnce(url || raw);
+    if (/^https?:/i.test(url)) return decodeOnce(url);
+    return textUrl(content) || raw;
+  }
+
   // ---------- conversion ----------
   function makeTurndown() {
     var td = new TurndownService({
@@ -371,19 +695,31 @@
       emDelimiter: "_",
     });
     td.use(turndownPluginGfm.gfm);
+    // A GFM table is line-oriented, but Outlook wraps every cell's content in a
+    // <p class=MsoNormal> and Turndown quite reasonably renders that as a blank
+    // line — which tears the row apart. Flatten whatever comes back out of a
+    // cell, and escape any pipe in it. Added after gfm, so it shadows the
+    // plugin's own tableCell rule.
+    td.addRule("tableCell", {
+      filter: ["th", "td"],
+      replacement: function (content, n) {
+        var text = content.replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
+        return (rowCells(n.parentNode)[0] === n ? "| " : " ") + text + " |";
+      },
+    });
     td.addRule("dropEmptyLinks", {
       filter: function (n) { return n.nodeName === "A" && !n.textContent.trim(); },
       replacement: function () { return ""; },
     });
-    // Safe-links unwrap (Defender rewrites hrefs)
+    // Unwrap gateway-rewritten hrefs back to the real URL (Defender Safe Links,
+    // Mimecast and the rest — see the link protectors section above).
     td.addRule("safelinks", {
-      filter: function (n) {
-        return n.nodeName === "A" && /safelinks\.protection\.outlook\.com/.test(n.getAttribute("href") || "");
-      },
+      filter: isProtectedLink,
       replacement: function (content, n) {
-        var href = n.getAttribute("href");
-        try { href = new URL(href).searchParams.get("url") || href; } catch (e) {}
-        href = decodeURIComponent(href);
+        // Rules added later win, so this one shadows dropEmptyLinks; an
+        // image-only protector link (a social icon) has to be dropped here too.
+        var href = realHref(n, content);
+        if (!n.textContent.trim()) return "";
         return content.trim() === href ? "<" + href + ">" : "[" + content + "](" + href + ")";
       },
     });
@@ -402,7 +738,7 @@
 
   function convert(item, html) {
     var td = makeTurndown();
-    var body = cleanHtml(html);
+    var body = cleanHtml(html, $("stripBoilerplate").checked);
     var out = $("frontmatter").checked ? buildFrontmatter(item) : "";
     out += "# " + (item.subject || "(no subject)") + "\n\n";
     if ($("splitThread").checked) {
@@ -447,6 +783,65 @@
       $("host").textContent = [d.hostName, d.hostVersion].filter(Boolean).join(" ");
     } catch (e) { /* diagnostics are not worth failing over */ }
   }
+
+  // ---------- settings ----------
+  // The task pane is torn down and rebuilt every time it opens, so without
+  // this every control would snap back to its markup default on each message.
+  // roamingSettings persists per user in the mailbox, so preferences also
+  // follow them to Outlook on the web and to other machines.
+  //
+  // Not secure storage — other services, Microsoft Graph included, can read
+  // it. Only ever put UI preferences here, never message content.
+  var SETTINGS_KEY = "options";
+
+  function roaming() {
+    try {
+      return Office.context.roamingSettings || null;
+    } catch (e) {
+      return null; // host does not offer it; markup defaults stand
+    }
+  }
+
+  function currentOptions() {
+    return {
+      frontmatter: $("frontmatter").checked,
+      splitThread: $("splitThread").checked,
+      stripBoilerplate: $("stripBoilerplate").checked,
+      stripEmails: $("stripEmails").checked,
+      nameMode: nameMode(),
+    };
+  }
+
+  var BOOL_OPTS = ["frontmatter", "splitThread", "stripBoilerplate", "stripEmails"];
+  var MODE_BOX = { display: "nameDisplay", first: "nameFirst", alias: "nameAlias" };
+
+  function loadSettings() {
+    var rs = roaming();
+    var saved, i, k;
+    if (!rs) return;
+    try { saved = rs.get(SETTINGS_KEY); } catch (e) { return; }
+    if (!saved || typeof saved !== "object") return;
+    for (i = 0; i < BOOL_OPTS.length; i++) {
+      k = BOOL_OPTS[i];
+      // Only a real boolean overrides the markup, so a partial or older blob
+      // leaves the remaining controls at their shipped defaults.
+      if (typeof saved[k] === "boolean") $(k).checked = saved[k];
+    }
+    if (has(MODE_BOX, saved.nameMode)) $(MODE_BOX[saved.nameMode]).checked = true;
+  }
+
+  function saveSettings() {
+    var rs = roaming();
+    if (!rs) return;
+    try {
+      rs.set(SETTINGS_KEY, currentOptions());
+      // Fire and forget: a failed write costs the user one preference next
+      // time, which is not worth interrupting the conversion over.
+      rs.saveAsync(function () {});
+    } catch (e) { /* preferences just will not stick */ }
+  }
+
+  function optionChanged() { saveSettings(); render(false); }
 
   // ---------- actions ----------
   function copy() {
@@ -505,12 +900,14 @@
   Office.onReady(function () {
     $("copy").addEventListener("click", function () { copy(); });
     $("download").addEventListener("click", function () { download(); });
-    $("frontmatter").addEventListener("change", function () { render(false); });
-    $("splitThread").addEventListener("change", function () { render(false); });
-    $("stripEmails").addEventListener("change", function () { syncNameMode(); render(false); });
-    $("nameDisplay").addEventListener("change", function () { render(false); });
-    $("nameFirst").addEventListener("change", function () { render(false); });
-    $("nameAlias").addEventListener("change", function () { render(false); });
+    $("frontmatter").addEventListener("change", optionChanged);
+    $("splitThread").addEventListener("change", optionChanged);
+    $("stripBoilerplate").addEventListener("change", optionChanged);
+    $("stripEmails").addEventListener("change", function () { syncNameMode(); optionChanged(); });
+    $("nameDisplay").addEventListener("change", optionChanged);
+    $("nameFirst").addEventListener("change", optionChanged);
+    $("nameAlias").addEventListener("change", optionChanged);
+    loadSettings();
     syncNameMode();
     applyTheme();
     showBuild();

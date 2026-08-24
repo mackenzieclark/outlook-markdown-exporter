@@ -5,9 +5,9 @@ const fs = require("fs");
 // Build the pane from the real taskpane.html rather than a hand-copied stub, so
 // the harness exercises the shipped markup (ids, defaults, the hidden child
 // group) instead of drifting from it. jsdom does not run the <script> tags.
-const dom = new JSDOM(fs.readFileSync(__dirname + "/../src/taskpane.html", "utf8"));
-const w = dom.window;
-const doc = w.document;
+let dom = new JSDOM(fs.readFileSync(__dirname + "/../src/taskpane.html", "utf8"));
+let w = dom.window;
+let doc = w.document;
 for (const k of ["document", "DOMParser", "NodeFilter", "Node", "Blob", "URL"]) global[k] = w[k];
 global.window = w;
 global.navigator = {};
@@ -67,12 +67,109 @@ const B = {
   },
 };
 
+// C: the shape Outlook emits around a signature — a borderless MsoNormalTable
+// nesting three deep, an icon strip of image-only links, a tracking pixel, a
+// client footer and a legal disclaimer. Invented from scratch: Bob Jones of
+// Example Corp does not exist, and neither does any URL below.
+const C = {
+  html: [
+    '<html xmlns:o="urn:schemas-microsoft-com:office:office"><head><meta charset="utf-8">',
+    "<style>p.MsoNormal{margin:0}</style></head>",
+    '<body lang="EN-US"><div class="WordSection1">',
+    '<p class="MsoNormal">Hi Carol,<o:p></o:p></p>',
+    '<p class="MsoNormal">The Q4 plan is attached. Shout if anything looks off before Friday.</p>',
+    '<p class="MsoNormal">Thanks,<br>Bob</p>',
+    '<table class="MsoNormalTable x_sig" border="0" cellpadding="0" cellspacing="0" style="border-collapse:collapse">',
+    '<tr><td style="padding:0in 5.4pt 0in 5.4pt">',
+    '<table class="MsoNormalTable" border="0" cellpadding="0" cellspacing="0" style="border-collapse:collapse">',
+    '<tr><td style="padding:0in"><p class="x_MsoNormal"><b>Bob Jones</b></p></td></tr>',
+    '<tr><td style="padding:0in"><p class="x_MsoNormal">Widget Lead, Example Corp</p></td></tr>',
+    '<tr><td style="padding:0in"><p class="x_MsoNormal">+1 555 0100</p></td></tr>',
+    '<tr><td style="padding:0in"><p class="x_MsoNormal"><a href="mailto:bob@example.com">bob@example.com</a></p></td></tr>',
+    '<tr><td style="padding:0in"><p class="x_MsoNormal"><a href="https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fwww.example.com%2F&amp;data=05%7C01">www.example.com</a></p></td></tr>',
+    "</table>",
+    '</td><td style="padding:0in 5.4pt 0in 5.4pt">',
+    '<table class="MsoNormalTable" border="0"><tr>',
+    '<td><a href="https://protect-eu.mimecastprotect.com/s/AbC1"><img src="https://cdn.example.com/x_a.png" width="24" height="24" alt=""></a></td>',
+    '<td><a href="https://protect-eu.mimecastprotect.com/s/DeF2"><img src="https://cdn.example.com/x_b.png" width="24" height="24" alt=""></a></td>',
+    "</tr></table>",
+    "</td></tr></table>",
+    '<p class="MsoNormal">Sent from my iPhone</p>',
+    '<div style="font-size:8.0pt;color:#888888">',
+    '<p class="MsoNormal">CONFIDENTIALITY NOTICE: this e-mail and any attachments are for the named recipient only.</p>',
+    '<p class="MsoNormal">If you have received this in error, please notify the sender and delete it.</p>',
+    "</div>",
+    '<img src="https://track.example.com/o.gif" width="1" height="1" style="width:1.0pt;height:1.0pt">',
+    "</div></body></html>",
+  ].join("\n"),
+  item: {
+    subject: "Q4 plan",
+    from: { displayName: "Bob Jones", emailAddress: "bob@example.com" },
+    to: [{ displayName: "Carol Jones", emailAddress: "carol@example.com" }],
+    cc: [],
+    dateTimeCreated: new Date("2026-08-21T11:00:00Z"),
+    internetMessageId: "<q4@example.com>",
+    conversationId: "AAQm",
+    attachments: [],
+  },
+};
+
+// D: tables that ARE data, plus the two protector shapes. Table one has a bold
+// first row (a header Outlook wrote as <td><b>); table two is a label/value
+// grid with no header at all, which must keep every one of its rows.
+const D = {
+  html: [
+    '<html><body><div class="WordSection1">',
+    '<p class="MsoNormal">Status below.</p>',
+    '<table class="MsoNormalTable" border="0" cellpadding="0" cellspacing="0" style="border-collapse:collapse">',
+    '<tr><td><p class="MsoNormal"><b>Env</b></p></td><td><p class="MsoNormal"><b>Status</b></p></td></tr>',
+    '<tr><td><p class="MsoNormal">staging</p></td><td><p class="MsoNormal">green</p></td></tr>',
+    '<tr><td><p class="MsoNormal">prod</p></td><td><p class="MsoNormal">amber</p></td></tr>',
+    "</table>",
+    '<p class="MsoNormal">And the ticket fields:</p>',
+    '<table border="0" style="width:400pt">',
+    "<tr><td>Owner</td><td>Alice</td></tr>",
+    "<tr><td>Due</td><td>2026-09-01</td></tr>",
+    "<tr><td>Priority</td><td>High</td></tr>",
+    "</table>",
+    '<p class="MsoNormal">Runbook: <a href="https://protect-eu.mimecastprotect.com/s/Zz9?domain=example.com">https://docs.example.com/runbook</a></p>',
+    '<p class="MsoNormal">Plan: <a href="https://nam12.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fplan&amp;data=05%7C01">the plan</a></p>',
+    '<p class="MsoNormal">Wiki: <a href="https://protect-eu.mimecastprotect.com/s/Yy8?domain=example.com">the wiki page</a></p>',
+    "</div></body></html>",
+  ].join("\n"),
+  item: {
+    subject: "Release status",
+    from: { displayName: "Alice", emailAddress: "alice@example.com" },
+    to: [{ displayName: "Bob", emailAddress: "bob@example.com" }],
+    cc: [],
+    dateTimeCreated: new Date("2026-08-22T08:00:00Z"),
+    internetMessageId: "<rel@example.com>",
+    conversationId: "AAQn",
+    attachments: [],
+  },
+};
+
 let fixture = A;
+const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
+let roamingStored = {};   // what has actually been persisted
+let roamingDraft = {};    // what set() has staged but not yet saved
+let roamingSaves = 0;
+
 global.Office = {
   onReady: (cb) => cb(),
   CoercionType: { Html: "html" },
   AsyncResultStatus: { Succeeded: "succeeded" },
   context: {
+    roamingSettings: {
+      get: (k) => clone(roamingStored[k]),
+      set: (k, v) => { roamingDraft[k] = clone(v); },
+      remove: (k) => { delete roamingDraft[k]; },
+      saveAsync: (cb) => {
+        Object.assign(roamingStored, roamingDraft);
+        roamingSaves += 1;
+        if (cb) cb({ status: "succeeded" });
+      },
+    },
     mailbox: {
       get item() {
         return Object.assign({}, fixture.item, {
@@ -92,6 +189,28 @@ const DEFAULT_STATUS = doc.getElementById("status").textContent;
 // ---------- driver ----------
 const MODE_ID = { display: "nameDisplay", first: "nameFirst", alias: "nameAlias" };
 
+// Close and reopen the pane: a fresh DOM from the shipped markup and a fresh
+// evaluation of taskpane.js. roamingSettings is read once, at load, so this is
+// the only way to prove a preference actually survives.
+function reopen() {
+  dom = new JSDOM(fs.readFileSync(__dirname + "/../src/taskpane.html", "utf8"));
+  w = dom.window;
+  doc = w.document;
+  for (const k of ["document", "DOMParser", "NodeFilter", "Node", "Blob", "URL"]) global[k] = w[k];
+  global.window = w;
+  delete require.cache[require.resolve("../src/taskpane.js")];
+  require("../src/taskpane.js");
+  return doc;
+}
+const boxes = () => ({
+  frontmatter: doc.getElementById("frontmatter").checked,
+  splitThread: doc.getElementById("splitThread").checked,
+  stripBoilerplate: doc.getElementById("stripBoilerplate").checked,
+  stripEmails: doc.getElementById("stripEmails").checked,
+  nameMode: doc.getElementById("nameAlias").checked ? "alias"
+    : doc.getElementById("nameFirst").checked ? "first" : "display",
+});
+
 // Drives the pane the way a user does: flip the controls, fire "change", let the
 // add-in's own listeners re-render.
 function run(opts) {
@@ -99,6 +218,7 @@ function run(opts) {
   fixture = opts.fixture || A;
   doc.getElementById("frontmatter").checked = opts.frontmatter !== false;
   doc.getElementById("splitThread").checked = opts.splitThread !== false;
+  doc.getElementById("stripBoilerplate").checked = opts.boiler !== false;
   doc.getElementById("stripEmails").checked = !!opts.strip;
   Object.keys(MODE_ID).forEach((m) => { doc.getElementById(MODE_ID[m]).checked = false; });
   doc.getElementById(MODE_ID[opts.mode || "display"]).checked = true;
@@ -138,6 +258,25 @@ show("A: strip on — Alias all names", aAlias);
 show("B: strip on — Display name", bDisplay);
 show("B: strip on — First name only", bFirst);
 show("B: strip on — Alias all names", bAlias);
+
+const cKeep = run({ fixture: C, boiler: false });
+const cStrip = run({ fixture: C });
+const cKeepDisplay = run({ fixture: C, boiler: false, strip: true, mode: "display" });
+const cStripAlias = run({ fixture: C, strip: true, mode: "alias" });
+const dOut = run({ fixture: D });
+
+show("C: nested signature table — boilerplate strip OFF (Part 1 only)", cKeep);
+show("C: boilerplate strip ON — the shipped default", cStrip);
+show("D: data tables and link protectors", dOut);
+
+// Nothing Turndown kept as raw HTML may reach the Markdown. `keep` emits the
+// element's outerHTML, so a leaked table brings its inline styles with it —
+// which makes style= the cheapest tripwire for the whole class of bug.
+const RAW_HTML = /<\/?(table|thead|tbody|tfoot|tr|td|th)\b|style=/i;
+function noRawHtml(md, where) {
+  const m = RAW_HTML.exec(md);
+  assert.ok(!m, "raw HTML leaked into " + where + ": " + (m && md.slice(m.index, m.index + 60)));
+}
 
 // ---------- tests ----------
 console.log("\n=== tests " + "=".repeat(53));
@@ -284,6 +423,200 @@ check("works with thread splitting off", () => {
 check("message_id is left alone — it is not a person", () => {
   assert.ok(bAlias.includes('message_id: "<budget@example.com>"'));
   assert.ok(bDisplay.includes('message_id: "<budget@example.com>"'));
+});
+
+console.log("\ntables never reach the Markdown as raw HTML");
+check("no fixture leaks a <table>, a cell, or an inline style, either way up", () => {
+  [A, B, C, D].forEach((f, i) => {
+    const name = "ABCD"[i];
+    noRawHtml(run({ fixture: f }), name + " (strip on)");
+    noRawHtml(run({ fixture: f, boiler: false }), name + " (strip off)");
+    noRawHtml(run({ fixture: f, boiler: false, strip: true, mode: "alias" }), name + " (aliased)");
+  });
+});
+check("a signature's nested layout tables are unwrapped, not dumped", () => {
+  // Same fixture, strip OFF: the text has to survive as ordinary blocks.
+  assert.ok(cKeep.includes("Bob Jones"));
+  assert.ok(cKeep.includes("Widget Lead, Example Corp"));
+  assert.ok(cKeep.includes("+1 555 0100"));
+  assert.ok(!cKeep.includes("MsoNormalTable"));
+});
+check("Turndown's own rules now run inside what used to be a kept table", () => {
+  // Both of these live inside the signature table, so before the fix Turndown
+  // never descended far enough to see either one.
+  assert.ok(cKeep.includes("[www.example.com](https://www.example.com/)"), "safelink unwrapped");
+  assert.ok(!/mimecastprotect/.test(cKeep), "image-only icon links dropped");
+});
+check("a bold first row is promoted to a real header row", () => {
+  assert.ok(dOut.includes("| Env | Status |\n| --- | --- |\n| staging | green |"));
+  assert.ok(dOut.includes("| prod | amber |"));
+  assert.ok(!dOut.includes("**Env**"), "the bold is the header now, not emphasis");
+});
+check("a label/value table keeps every row under a synthesized header", () => {
+  assert.ok(dOut.includes("|  |  |\n| --- | --- |\n| Owner | Alice |"));
+  assert.ok(dOut.includes("| Due | 2026-09-01 |"));
+  assert.ok(dOut.includes("| Priority | High |"), "no data row may be eaten as a header");
+});
+check("a table that already had <th> converts exactly as before", () => {
+  assert.ok(DEFAULT_OUT.includes("| Env | Status |\n| --- | --- |\n| prod | green |"));
+});
+
+console.log("\nlink protectors");
+check("Defender safe links still unwrap to the real URL", () => {
+  assert.ok(DEFAULT_OUT.includes("[the doc](https://example.sharepoint.com/sites/x/doc.docx)"));
+  assert.ok(dOut.includes("[the plan](https://example.com/plan)"));
+});
+check("a protector that hides the URL falls back to the anchor text", () => {
+  // Mimecast hashes the target into the path; the visible text is all there is.
+  assert.ok(dOut.includes("<https://docs.example.com/runbook>"));
+});
+check("a protected link whose text is not a URL keeps the rewritten href", () => {
+  assert.ok(dOut.includes("[the wiki page](https://protect-eu.mimecastprotect.com/s/Yy8?domain=example.com)"));
+});
+
+console.log("\nstrip signatures and boilerplate");
+check("the checkbox ships checked, between split and strip-emails", () => {
+  const fresh = new JSDOM(fs.readFileSync(__dirname + "/../src/taskpane.html", "utf8")).window.document;
+  const ids = [...fresh.querySelectorAll("body > label > input")].map((i) => i.id);
+  assert.deepStrictEqual(ids, ["frontmatter", "splitThread", "stripBoilerplate", "stripEmails"]);
+  assert.strictEqual(fresh.getElementById("stripBoilerplate").checked, true);
+  // The radio group must still hang off stripEmails, not off the new checkbox.
+  const group = fresh.getElementById("nameModeGroup");
+  assert.strictEqual(group.previousElementSibling.querySelector("input").id, "stripEmails");
+});
+check("the signature block goes", () => {
+  const body = cStrip.slice(cStrip.indexOf("# Q4 plan"));
+  assert.ok(!body.includes("Widget Lead"));
+  assert.ok(!body.includes("+1 555 0100"));
+  assert.ok(!body.includes("www.example.com"));
+  assert.ok(!body.includes("bob@example.com"));
+});
+check("client footers go", () => assert.ok(!cStrip.includes("Sent from my iPhone")));
+check("confidentiality disclaimers go, every paragraph of them", () => {
+  assert.ok(!/CONFIDENTIALITY NOTICE/i.test(cStrip));
+  assert.ok(!/named recipient/i.test(cStrip));
+  assert.ok(!/received this in error/i.test(cStrip));
+});
+check("tracking pixels, spacers and social icon rows go", () => {
+  assert.ok(!cStrip.includes("track.example.com"), "1x1 pixel");
+  assert.ok(!cStrip.includes("cdn.example.com"), "icon images");
+  assert.ok(!/mimecastprotect/.test(cStrip), "image-only icon links");
+});
+check("prose and the sign-off survive", () => {
+  assert.ok(cStrip.includes("Hi Carol,"));
+  assert.ok(cStrip.includes("The Q4 plan is attached. Shout if anything looks off before Friday."));
+  assert.ok(/Thanks,\nBob/.test(cStrip), "a sign-off is not a signature block");
+});
+check("with the checkbox off the signature stays, merely unwrapped", () => {
+  assert.ok(cKeep.includes("Widget Lead, Example Corp"));
+  assert.ok(cKeep.includes("Sent from my iPhone"));
+  assert.ok(/CONFIDENTIALITY NOTICE/.test(cKeep));
+});
+check("real data tables and real links are left alone by the strip", () => {
+  assert.strictEqual(run({ fixture: D }), run({ fixture: D, boiler: false }));
+  assert.ok(dOut.includes("| Owner | Alice |"));
+  assert.ok(dOut.includes("[the plan](https://example.com/plan)"));
+});
+check("stripping boilerplate does not disturb the reply-split markers", () => {
+  const md = run({ fixture: A });
+  assert.strictEqual(md, DEFAULT_OUT);
+  assert.ok(md.includes("## Bob <bob@example.com> — Tuesday, August 19, 2026 3:02 PM"));
+  assert.ok(md.includes("## Alice — Monday, August 18, 2026 9:00 AM"));
+});
+
+console.log("\nboilerplate x strip-email-addresses");
+check("with both on, the signature is gone and no address is left to strip", () => {
+  assert.ok(!/@example\.com/.test(withoutIds(cStripAlias)));
+  assert.ok(!cStripAlias.includes("Widget Lead"));
+  assert.ok(cStripAlias.includes('from: "User1"'));
+  assert.strictEqual(new Set(cStripAlias.match(/User\d+/g)).size, 2);
+});
+check("with boilerplate kept, the signature's address is still rewritten", () => {
+  assert.ok(cKeepDisplay.includes("Widget Lead, Example Corp"), "signature kept");
+  assert.ok(!/@example\.com/.test(withoutIds(cKeepDisplay)), "but its address is not");
+  assert.ok(cKeepDisplay.includes("Bob Jones"));
+});
+check("the two checkboxes are independent", () => {
+  const alias = run({ fixture: C, boiler: false, strip: true, mode: "alias" });
+  assert.ok(alias.includes("Widget Lead, Example Corp"));
+  assert.ok(!/@example\.com/.test(withoutIds(alias)));
+  assert.ok(/User\d+/.test(alias));
+});
+check("repeat conversions stay byte-identical with the new toggle", () => {
+  assert.strictEqual(run({ fixture: C }), cStrip);
+  assert.strictEqual(run({ fixture: C, boiler: false }), cKeep);
+});
+
+
+console.log("\nsettings persistence");
+check("changing an option writes it through to storage", () => {
+  const before = roamingSaves;
+  run({ fixture: A, frontmatter: false, boiler: false, strip: true, mode: "alias" });
+  assert.ok(roamingSaves > before, "saveAsync was called");
+  assert.deepStrictEqual(roamingStored.options, {
+    frontmatter: false,
+    splitThread: true,
+    stripBoilerplate: false,
+    stripEmails: true,
+    nameMode: "alias",
+  });
+});
+check("set() alone does not persist — only saveAsync commits", () => {
+  const stored = clone(roamingStored.options);
+  Office.context.roamingSettings.set("options", {
+    frontmatter: true, splitThread: true, stripBoilerplate: true,
+    stripEmails: false, nameMode: "display",
+  });
+  assert.deepStrictEqual(roamingStored.options, stored, "staged, not written");
+});
+check("every option survives closing and reopening the pane", () => {
+  reopen();
+  assert.deepStrictEqual(boxes(), {
+    frontmatter: false,
+    splitThread: true,
+    stripBoilerplate: false,
+    stripEmails: true,
+    nameMode: "alias",
+  });
+});
+check("the reopened pane renders with the restored options, not the defaults", () => {
+  const out = doc.getElementById("out").value;
+  assert.ok(!out.startsWith("---"), "frontmatter stayed off");
+  assert.ok(/User\d+/.test(out), "alias mode stayed on");
+});
+check("the child radio group is re-revealed to match a restored checkbox", () => {
+  assert.strictEqual(doc.getElementById("nameModeGroup").hidden, false);
+});
+check("with nothing stored, the shipped markup defaults win", () => {
+  roamingStored = {};
+  roamingDraft = {};
+  reopen();
+  assert.deepStrictEqual(boxes(), {
+    frontmatter: true,
+    splitThread: true,
+    stripBoilerplate: true,
+    stripEmails: false,
+    nameMode: "display",
+  });
+  assert.strictEqual(doc.getElementById("nameModeGroup").hidden, true);
+});
+check("a partial or older blob leaves unknown options at their defaults", () => {
+  roamingStored = { options: { stripEmails: true, nameMode: "first" } };
+  reopen();
+  const st = boxes();
+  assert.strictEqual(st.stripEmails, true, "what was stored is applied");
+  assert.strictEqual(st.nameMode, "first");
+  assert.strictEqual(st.frontmatter, true, "what was not stored keeps its default");
+  assert.strictEqual(st.stripBoilerplate, true);
+});
+check("a corrupt blob is ignored rather than throwing", () => {
+  roamingStored = { options: "not an object" };
+  assert.doesNotThrow(reopen);
+  assert.strictEqual(boxes().frontmatter, true);
+  roamingStored = { options: { frontmatter: "yes please", nameMode: "nonsense" } };
+  assert.doesNotThrow(reopen);
+  assert.strictEqual(boxes().frontmatter, true, "a non-boolean is not applied");
+  assert.strictEqual(boxes().nameMode, "display", "an unknown mode is not applied");
 });
 
 console.log("\n" + checks + " checks passed.");
